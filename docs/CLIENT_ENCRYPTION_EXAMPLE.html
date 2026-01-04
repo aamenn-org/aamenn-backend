@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aamenn - Zero-Knowledge Encryption Demo</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #0a0a0a;
+        color: #e0e0e0;
+      }
+      h1 {
+        color: #4caf50;
+        text-align: center;
+      }
+      h2 {
+        color: #81c784;
+        border-bottom: 1px solid #333;
+        padding-bottom: 8px;
+        margin-top: 30px;
+      }
+      .card {
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 15px 0;
+      }
+      .info-box {
+        background: #1a237e;
+        border: 1px solid #3949ab;
+        border-radius: 6px;
+        padding: 15px;
+        margin: 15px 0;
+        font-size: 14px;
+      }
+      .warning-box {
+        background: #4a2800;
+        border: 1px solid #ff9800;
+        border-radius: 6px;
+        padding: 15px;
+        margin: 15px 0;
+      }
+      input,
+      button {
+        padding: 10px 15px;
+        margin: 5px;
+        border-radius: 5px;
+        border: 1px solid #444;
+        font-size: 14px;
+      }
+      input {
+        background: #2a2a2a;
+        color: #fff;
+        width: 280px;
+      }
+      button {
+        background: #4caf50;
+        color: white;
+        cursor: pointer;
+        border: none;
+        transition: background 0.2s;
+      }
+      button:hover {
+        background: #45a049;
+      }
+      button:disabled {
+        background: #666;
+        cursor: not-allowed;
+      }
+      .btn-secondary {
+        background: #2196f3;
+      }
+      .btn-secondary:hover {
+        background: #1976d2;
+      }
+      .status {
+        padding: 8px 12px;
+        border-radius: 4px;
+        margin: 10px 0;
+        display: inline-block;
+      }
+      .success {
+        background: #1b5e20;
+        color: #a5d6a7;
+      }
+      .error {
+        background: #b71c1c;
+        color: #ffcdd2;
+      }
+      .pending {
+        background: #e65100;
+        color: #ffcc80;
+      }
+      #logOutput {
+        background: #111;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 15px;
+        height: 300px;
+        overflow-y: auto;
+        font-family: 'Consolas', monospace;
+        font-size: 12px;
+      }
+      .log-info {
+        color: #64b5f6;
+      }
+      .log-success {
+        color: #81c784;
+      }
+      .log-error {
+        color: #e57373;
+      }
+      .log-crypto {
+        color: #ce93d8;
+      }
+      .flow-diagram {
+        background: #111;
+        padding: 15px;
+        border-radius: 6px;
+        font-family: monospace;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .highlight {
+        color: #ffeb3b;
+      }
+      code {
+        background: #333;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-family: monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🔐 Aamenn Zero-Knowledge Encryption</h1>
+
+    <div class="info-box">
+      <strong>Best Practice Flow:</strong><br />
+      • Password is used for <strong>both</strong> server auth AND local key
+      derivation<br />
+      • Master Key is generated locally, encrypted with KEK (derived from
+      password)<br />
+      • Server stores <strong>only encrypted</strong> master key - can NEVER
+      decrypt it<br />
+      • All file encryption/decryption happens locally in your browser
+    </div>
+
+    <div class="flow-diagram">
+      <strong>📋 Registration Flow:</strong><br />
+      Password → <span class="highlight">KDF(password, salt)</span> → KEK →
+      <span class="highlight">AES-GCM(masterKey, KEK)</span> →
+      encryptedMasterKey → Server<br /><br />
+      <strong>📋 Login Flow:</strong><br />
+      Server → encryptedMasterKey + salt →
+      <span class="highlight">KDF(password, salt)</span> → KEK →
+      <span class="highlight">Decrypt</span> → masterKey (in memory)
+    </div>
+
+    <!-- Step 1: Authentication -->
+    <h2>Step 1: Authentication</h2>
+    <div class="card">
+      <div>
+        <input
+          type="email"
+          id="email"
+          placeholder="Email"
+          value="test@example.com"
+        />
+        <input
+          type="password"
+          id="password"
+          placeholder="Password (min 8 chars)"
+          value="SecurePass123!"
+        />
+      </div>
+      <div style="margin-top: 10px">
+        <button onclick="register()">Register</button>
+        <button onclick="login()" class="btn-secondary">Login</button>
+      </div>
+      <div id="authStatus"></div>
+    </div>
+
+    <!-- Step 2: Upload -->
+    <h2>Step 2: Encrypt & Upload File</h2>
+    <div class="card">
+      <input type="file" id="fileInput" />
+      <button onclick="uploadFile()" style="margin-top: 10px">
+        Encrypt & Upload
+      </button>
+      <div id="uploadStatus"></div>
+    </div>
+
+    <!-- Log Output -->
+    <h2>🔍 Encryption Log</h2>
+    <div id="logOutput"></div>
+
+    <div class="warning-box">
+      <strong>⚠️ Development Mode:</strong> This demo must be served via HTTP
+      (not file://). Use <code>npx serve docs</code> or similar.
+    </div>
+
+    <script>
+      // Configuration
+      const API_BASE = 'http://localhost:3000';
+
+      // State (in memory only - cleared on page refresh)
+      let accessToken = null;
+      let masterKey = null; // CryptoKey object - NEVER stored persistently
+
+      // KDF Configuration
+      const KDF_CONFIG = {
+        algorithm: 'pbkdf2',
+        iterations: 100000,
+        hashLength: 32,
+      };
+
+      // ==================== UTILITIES ====================
+
+      function log(message, type = 'info') {
+        const output = document.getElementById('logOutput');
+        const time = new Date().toLocaleTimeString();
+        const className =
+          type === 'error'
+            ? 'log-error'
+            : type === 'success'
+              ? 'log-success'
+              : type === 'crypto'
+                ? 'log-crypto'
+                : 'log-info';
+        output.innerHTML += `<div class="${className}">[${time}] ${message}</div>`;
+        output.scrollTop = output.scrollHeight;
+      }
+
+      function arrayBufferToBase64(buffer) {
+        const bytes =
+          buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+      }
+
+      function base64ToArrayBuffer(base64) {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes.buffer;
+      }
+
+      // ==================== KEY DERIVATION ====================
+
+      /**
+       * Derive Key Encryption Key (KEK) from password using PBKDF2
+       * KEK = PBKDF2(password, salt, 100000 iterations)
+       */
+      async function deriveKEK(password, saltBase64) {
+        log('Deriving KEK from password...', 'crypto');
+
+        const encoder = new TextEncoder();
+        const passwordKey = await crypto.subtle.importKey(
+          'raw',
+          encoder.encode(password),
+          'PBKDF2',
+          false,
+          ['deriveBits', 'deriveKey'],
+        );
+
+        const salt = base64ToArrayBuffer(saltBase64);
+
+        const kek = await crypto.subtle.deriveKey(
+          {
+            name: 'PBKDF2',
+            salt: salt,
+            iterations: KDF_CONFIG.iterations,
+            hash: 'SHA-256',
+          },
+          passwordKey,
+          { name: 'AES-GCM', length: 256 },
+          false, // not extractable
+          ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
+        );
+
+        log('✓ KEK derived successfully', 'success');
+        return kek;
+      }
+
+      /**
+       * Generate a random Master Key (AES-256)
+       */
+      async function generateMasterKey() {
+        log('Generating random Master Key...', 'crypto');
+
+        const masterKey = await crypto.subtle.generateKey(
+          { name: 'AES-GCM', length: 256 },
+          true, // extractable (so we can encrypt it)
+          ['encrypt', 'decrypt'],
+        );
+
+        log('✓ Master Key generated (256-bit AES)', 'success');
+        return masterKey;
+      }
+
+      /**
+       * Encrypt Master Key with KEK
+       * Returns: base64(IV + ciphertext)
+       */
+      async function encryptMasterKey(masterKeyToEncrypt, kek) {
+        log('Encrypting Master Key with KEK...', 'crypto');
+
+        // Export master key to raw bytes
+        const masterKeyBytes = await crypto.subtle.exportKey(
+          'raw',
+          masterKeyToEncrypt,
+        );
+
+        // Generate IV
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+
+        // Encrypt with KEK
+        const ciphertext = await crypto.subtle.encrypt(
+          { name: 'AES-GCM', iv: iv },
+          kek,
+          masterKeyBytes,
+        );
+
+        // Combine IV + ciphertext
+        const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+        combined.set(iv, 0);
+        combined.set(new Uint8Array(ciphertext), iv.length);
+
+        log('✓ Master Key encrypted', 'success');
+        return arrayBufferToBase64(combined);
+      }
+
+      /**
+       * Decrypt Master Key with KEK
+       */
+      async function decryptMasterKey(encryptedMasterKeyBase64, kek) {
+        log('Decrypting Master Key with KEK...', 'crypto');
+
+        const combined = new Uint8Array(
+          base64ToArrayBuffer(encryptedMasterKeyBase64),
+        );
+
+        // Extract IV and ciphertext
+        const iv = combined.slice(0, 12);
+        const ciphertext = combined.slice(12);
+
+        // Decrypt
+        const masterKeyBytes = await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: iv },
+          kek,
+          ciphertext,
+        );
+
+        // Import as CryptoKey
+        const decryptedMasterKey = await crypto.subtle.importKey(
+          'raw',
+          masterKeyBytes,
+          { name: 'AES-GCM', length: 256 },
+          true, // extractable for file key wrapping
+          ['encrypt', 'decrypt'],
+        );
+
+        log('✓ Master Key decrypted and loaded into memory', 'success');
+        return decryptedMasterKey;
+      }
+
+      // ==================== AUTHENTICATION ====================
+
+      /**
+       * Register new user
+       * 1. Generate salt
+       * 2. Derive KEK from password
+       * 3. Generate Master Key
+       * 4. Encrypt Master Key with KEK
+       * 5. Send to server
+       */
+      async function register() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        if (!email || password.length < 8) {
+          alert('Email required and password must be at least 8 characters');
+          return;
+        }
+
+        try {
+          log('=== REGISTRATION FLOW ===', 'info');
+
+          // Step 1: Generate random salt (16 bytes)
+          const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+          const kekSalt = arrayBufferToBase64(saltBytes);
+          log(`Generated KEK salt: ${kekSalt.substring(0, 20)}...`, 'crypto');
+
+          // Step 2: Derive KEK from password
+          const kek = await deriveKEK(password, kekSalt);
+
+          // Step 3: Generate random Master Key
+          const newMasterKey = await generateMasterKey();
+
+          // Step 4: Encrypt Master Key with KEK
+          const encryptedMasterKey = await encryptMasterKey(newMasterKey, kek);
+          log(
+            `Encrypted Master Key: ${encryptedMasterKey.substring(0, 30)}...`,
+            'crypto',
+          );
+
+          // Step 5: Send to server
+          log('Sending registration to server...', 'info');
+          const response = await fetch(`${API_BASE}/api/v1/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email,
+              password, // Used for server auth (bcrypt hashed)
+              encryptedMasterKey,
+              kekSalt,
+              kdfParams: KDF_CONFIG,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.message || 'Registration failed');
+          }
+
+          // Store token and master key in memory
+          accessToken = data.accessToken;
+          masterKey = newMasterKey; // Keep in memory
+
+          document.getElementById('authStatus').innerHTML =
+            `<div class="status success">✓ Registered! User: ${data.userId}<br>Master Key loaded in memory</div>`;
+          log('✓ Registration complete! Ready to encrypt files.', 'success');
+        } catch (error) {
+          log(`✗ Registration failed: ${error.message}`, 'error');
+          document.getElementById('authStatus').innerHTML =
+            `<div class="status error">✗ ${error.message}</div>`;
+        }
+      }
+
+      /**
+       * Login existing user
+       * 1. Send credentials to server
+       * 2. Receive encrypted master key + salt
+       * 3. Derive KEK from password
+       * 4. Decrypt master key locally
+       */
+      async function login() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        if (!email || !password) {
+          alert('Email and password required');
+          return;
+        }
+
+        try {
+          log('=== LOGIN FLOW ===', 'info');
+
+          // Step 1: Send credentials to server
+          log('Authenticating with server...', 'info');
+          const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.message || 'Login failed');
+          }
+
+          accessToken = data.accessToken;
+          log('✓ Server authentication successful', 'success');
+
+          // Step 2: Check if we have encryption data
+          if (!data.encryptedMasterKey || !data.kekSalt) {
+            log(
+              '⚠ No encryption data found - user may need to set up encryption',
+              'error',
+            );
+            document.getElementById('authStatus').innerHTML =
+              `<div class="status pending">⚠ Logged in but no encryption setup found</div>`;
+            return;
+          }
+
+          log(
+            `Received encrypted master key: ${data.encryptedMasterKey.substring(0, 30)}...`,
+            'crypto',
+          );
+          log(
+            `Received KEK salt: ${data.kekSalt.substring(0, 20)}...`,
+            'crypto',
+          );
+
+          // Step 3: Derive KEK from password
+          const kek = await deriveKEK(password, data.kekSalt);
+
+          // Step 4: Decrypt master key locally
+          masterKey = await decryptMasterKey(data.encryptedMasterKey, kek);
+
+          document.getElementById('authStatus').innerHTML =
+            `<div class="status success">✓ Logged in! Master Key decrypted and loaded</div>`;
+          log('✓ Login complete! Ready to encrypt/decrypt files.', 'success');
+        } catch (error) {
+          log(`✗ Login failed: ${error.message}`, 'error');
+          document.getElementById('authStatus').innerHTML =
+            `<div class="status error">✗ ${error.message}</div>`;
+        }
+      }
+
+      // ==================== FILE ENCRYPTION & UPLOAD ====================
+
+      /**
+       * Encrypt and upload a file
+       * 1. Generate random file key
+       * 2. Encrypt file with file key
+       * 3. Encrypt filename with file key
+       * 4. Wrap file key with master key
+       * 5. Upload to server
+       */
+      async function uploadFile() {
+        if (!accessToken) {
+          alert('Please login first!');
+          return;
+        }
+
+        if (!masterKey) {
+          alert('Master key not loaded! Please login again.');
+          return;
+        }
+
+        const fileInput = document.getElementById('fileInput');
+        const file = fileInput.files[0];
+
+        if (!file) {
+          alert('Please select a file!');
+          return;
+        }
+
+        try {
+          log('=== FILE ENCRYPTION FLOW ===', 'info');
+          log(`File: ${file.name} (${file.size} bytes)`, 'info');
+
+          // Step 1: Generate random file key (32 bytes)
+          const fileKeyBytes = crypto.getRandomValues(new Uint8Array(32));
+          const fileKey = await crypto.subtle.importKey(
+            'raw',
+            fileKeyBytes,
+            'AES-GCM',
+            true,
+            ['encrypt', 'decrypt'],
+          );
+          log('✓ Generated random file key (256-bit)', 'crypto');
+
+          // Step 2: Read and encrypt file
+          const fileBuffer = await file.arrayBuffer();
+          const fileIV = crypto.getRandomValues(new Uint8Array(12));
+          const encryptedFileBuffer = await crypto.subtle.encrypt(
+            { name: 'AES-GCM', iv: fileIV },
+            fileKey,
+            fileBuffer,
+          );
+
+          // Combine IV + ciphertext
+          const encryptedFile = new Uint8Array(
+            fileIV.length + encryptedFileBuffer.byteLength,
+          );
+          encryptedFile.set(fileIV, 0);
+          encryptedFile.set(new Uint8Array(encryptedFileBuffer), fileIV.length);
+          log(`✓ File encrypted (${encryptedFile.length} bytes)`, 'crypto');
+
+          // Step 3: Encrypt filename
+          const filenameIV = crypto.getRandomValues(new Uint8Array(12));
+          const filenameBuffer = new TextEncoder().encode(file.name);
+          const encryptedFilenameBuffer = await crypto.subtle.encrypt(
+            { name: 'AES-GCM', iv: filenameIV },
+            fileKey,
+            filenameBuffer,
+          );
+
+          const encryptedFilenameWithIV = new Uint8Array(
+            filenameIV.length + encryptedFilenameBuffer.byteLength,
+          );
+          encryptedFilenameWithIV.set(filenameIV, 0);
+          encryptedFilenameWithIV.set(
+            new Uint8Array(encryptedFilenameBuffer),
+            filenameIV.length,
+          );
+          const fileNameEncrypted = arrayBufferToBase64(
+            encryptedFilenameWithIV,
+          );
+          log('✓ Filename encrypted', 'crypto');
+
+          // Step 4: Wrap file key with master key
+          const keyIV = crypto.getRandomValues(new Uint8Array(12));
+          const wrappedKeyBuffer = await crypto.subtle.encrypt(
+            { name: 'AES-GCM', iv: keyIV },
+            masterKey,
+            fileKeyBytes,
+          );
+
+          const wrappedKeyWithIV = new Uint8Array(
+            keyIV.length + wrappedKeyBuffer.byteLength,
+          );
+          wrappedKeyWithIV.set(keyIV, 0);
+          wrappedKeyWithIV.set(new Uint8Array(wrappedKeyBuffer), keyIV.length);
+          const cipherFileKey = arrayBufferToBase64(wrappedKeyWithIV);
+          log('✓ File key wrapped with master key', 'crypto');
+
+          // Step 5: Calculate SHA1 hash for B2
+          const hashBuffer = await crypto.subtle.digest('SHA-1', encryptedFile);
+          const sha1Hash = Array.from(new Uint8Array(hashBuffer))
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join('');
+
+          // Step 6: Upload
+          log('Uploading encrypted file...', 'info');
+          const formData = new FormData();
+          formData.append(
+            'file',
+            new Blob([encryptedFile], { type: 'application/octet-stream' }),
+            'encrypted.bin',
+          );
+          formData.append('fileNameEncrypted', fileNameEncrypted);
+          formData.append('cipherFileKey', cipherFileKey);
+          formData.append('mimeType', file.type || 'application/octet-stream');
+          formData.append('sha1Hash', sha1Hash);
+
+          const uploadResponse = await fetch(
+            `${API_BASE}/api/v1/files/upload`,
+            {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${accessToken}` },
+              body: formData,
+            },
+          );
+
+          if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json();
+            throw new Error(errorData.message || 'Upload failed');
+          }
+
+          const uploadData = await uploadResponse.json();
+
+          document.getElementById('uploadStatus').innerHTML =
+            `<div class="status success">✓ File uploaded!<br>ID: ${uploadData.fileId}</div>`;
+          log(`✓ UPLOAD COMPLETE! File ID: ${uploadData.fileId}`, 'success');
+
+          fileInput.value = '';
+        } catch (error) {
+          log(`✗ Upload failed: ${error.message}`, 'error');
+          document.getElementById('uploadStatus').innerHTML =
+            `<div class="status error">✗ ${error.message}</div>`;
+        }
+      }
+    </script>
+  </body>
+</html>
