@@ -17,7 +17,7 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd /var/www/Aamenn-Backend
+            cd /var/www/aamenn-backend
             git pull origin main
             docker compose down
             docker compose build
