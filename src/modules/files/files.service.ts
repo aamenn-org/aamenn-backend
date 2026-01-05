@@ -611,15 +611,17 @@ export class FilesService {
    * Returns current usage, limit, and whether exceeded.
    */
   async getStorageUsage(userId: string) {
-    // Get total bytes used by user (excluding soft-deleted files)
+    // Get total bytes used and file count (excluding soft-deleted files)
     const result = await this.filesRepository
       .createQueryBuilder('file')
       .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
+      .addSelect('COUNT(file.id)', 'fileCount')
       .where('file.userId = :userId', { userId })
       .andWhere('file.deletedAt IS NULL')
       .getRawOne();
 
     const usedBytes = parseInt(result.totalBytes, 10) || 0;
+    const fileCount = parseInt(result.fileCount, 10) || 0;
     const limitGb = this.configService.get<number>('storage.limitGb', 1);
     const limitBytes = limitGb * 1024 * 1024 * 1024; // Convert GB to bytes
     const usedGb = usedBytes / (1024 * 1024 * 1024);
@@ -629,6 +631,7 @@ export class FilesService {
       usedGb: Math.round(usedGb * 100) / 100, // Round to 2 decimal places
       limitBytes,
       limitGb,
+      fileCount,
       exceeded: usedBytes >= limitBytes,
       percentUsed: Math.min(Math.round((usedBytes / limitBytes) * 100), 100),
     };
