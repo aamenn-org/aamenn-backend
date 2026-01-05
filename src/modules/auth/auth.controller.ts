@@ -23,6 +23,7 @@ import {
   RefreshTokenDto,
   AuthResponseDto,
   RegisterResponseDto,
+  ChangePasswordDto,
 } from './dto';
 import { ErrorResponseDto } from '../../common/dto';
 
@@ -162,5 +163,48 @@ Requires authentication.`,
   })
   async getEncryptionKeys(@CurrentUser() authUser: AuthenticatedUser) {
     return this.authService.getEncryptionKeys(authUser.userId);
+  }
+
+  /**
+   * Change password with zero-knowledge re-encryption
+   */
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Change password',
+    description: `Change user password with zero-knowledge master key re-encryption.
+
+**Zero-Knowledge Re-Encryption Flow:**
+1. Client derives old KEK: \`oldKEK = PBKDF2(currentPassword, oldKekSalt, iterations)\`
+2. Client decrypts master key: \`masterKey = AES-GCM-decrypt(encryptedMasterKey, oldKEK)\`
+3. Client generates new salt (newKekSalt)
+4. Client derives new KEK: \`newKEK = PBKDF2(newPassword, newKekSalt, iterations)\`
+5. Client re-encrypts: \`newEncryptedMasterKey = AES-GCM(masterKey, newKEK)\`
+6. Client sends: currentPassword, newPassword, newEncryptedMasterKey, newKekSalt
+7. Server verifies currentPassword, updates hash and security params
+
+The master key itself NEVER changes - only its encryption wrapper.`,
+  })
+  @ApiBody({ type: ChangePasswordDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Password changed successfully',
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Current password is incorrect',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid input data',
+    type: ErrorResponseDto,
+  })
+  async changePassword(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<{ success: boolean }> {
+    return this.authService.changePassword(authUser.userId, dto);
   }
 }

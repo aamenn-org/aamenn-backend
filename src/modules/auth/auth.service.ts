@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { RegisterDto, LoginDto, RefreshTokenDto } from './dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { TokenResponse } from './interfaces/jwt-payload.interface';
 
 const AUTH_PROVIDER = {
@@ -219,5 +220,57 @@ export class AuthService {
       kekSalt: security.kekSalt,
       kdfParams: security.kdfParams,
     };
+  }
+
+  /**
+   * Change user's password
+   *
+   * Zero-Knowledge Flow:
+   * 1. Client decrypts master key with old KEK (derived from old password)
+   * 2. Client generates new KEK salt and derives new KEK from new password
+   * 3. Client re-encrypts master key with new KEK
+   * 4. Server verifies old password, updates hash and security params
+   */
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<{ success: boolean }> {
+    // Find user and verify they're a local auth user
+    const user = await this.usersService.findUser({ id: userId });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (user.authProvider !== AUTH_PROVIDER.LOCAL || !user.passwordHash) {
+      throw new BadRequestException(
+        'Password change is only available for email/password accounts',
+      );
+    }
+
+    // Verify current password
+    const isCurrentPasswordValid = await bcrypt.compare(
+      dto.currentPassword,
+      user.passwordHash,
+    );
+
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    // Hash new password
+    const newPasswordHash = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS);
+
+    // Update password hash
+    await this.usersService.updatePasswordHash(userId, newPasswordHash);
+
+    // Update security params (new encrypted master key with new KEK)
+    await this.usersService.updateSecurityParams(
+      userId,
+      dto.newEncryptedMasterKey,
+      dto.newKekSalt,
+    );
+
+    return { success: true };
   }
 }
