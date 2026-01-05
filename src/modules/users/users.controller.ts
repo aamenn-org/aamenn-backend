@@ -2,10 +2,14 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Body,
   HttpCode,
   HttpStatus,
   ConflictException,
+  UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -13,10 +17,13 @@ import {
   ApiOperation,
   ApiResponse,
 } from '@nestjs/swagger';
+import * as bcrypt from 'bcrypt';
 import { UsersService } from './users.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
 import { CreateUserSecurityDto } from './dto/create-user-security.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 import {
   CurrentUserResponseDto,
   UserSecurityResponseDto,
@@ -66,8 +73,97 @@ export class UsersController {
     return {
       id: user.id,
       email: user.email,
+      displayName: user.displayName,
       hasSecuritySetup: !!security,
+      authProvider: user.authProvider,
       createdAt: user.createdAt,
+    };
+  }
+
+  /**
+   * Update current user's profile.
+   */
+  @Patch('me')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Update profile',
+    description: 'Update the authenticated user profile information',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Profile updated successfully',
+  })
+  async updateProfile(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    const user = await this.usersService.updateProfile(authUser.userId, dto);
+
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      updatedAt: user.updatedAt,
+    };
+  }
+
+  /**
+   * Delete current user's account permanently.
+   * Requires password verification for security.
+   */
+  @Delete('me')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Delete account',
+    description: `Permanently delete the authenticated user's account and all associated data.
+    
+**WARNING:** This action is irreversible. All files, albums, and encryption keys will be permanently deleted.
+
+Requires password verification for local auth users.`,
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Account deleted successfully',
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Invalid password',
+    type: ErrorResponseDto,
+  })
+  async deleteAccount(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Body() dto: DeleteAccountDto,
+  ) {
+    // Get user to verify password
+    const user = await this.usersService.findUser({ id: authUser.userId });
+
+    if (!user) {
+      throw new ConflictException('User not found');
+    }
+
+    // Verify password for local auth users
+    if (user.authProvider === 'local' && user.passwordHash) {
+      const isPasswordValid = await bcrypt.compare(
+        dto.password,
+        user.passwordHash,
+      );
+      if (!isPasswordValid) {
+        throw new UnauthorizedException('Invalid password');
+      }
+    } else if (user.authProvider !== 'local') {
+      // For OAuth users, we might want a different verification method
+      // For now, we'll allow deletion without password (they can re-auth)
+      throw new ForbiddenException(
+        'Account deletion for OAuth users is not yet supported. Please contact support.',
+      );
+    }
+
+    // Delete account and all associated data
+    await this.usersService.deleteAccount(authUser.userId);
+
+    return {
+      success: true,
+      message: 'Account deleted successfully',
     };
   }
 
