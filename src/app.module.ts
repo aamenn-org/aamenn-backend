@@ -23,6 +23,7 @@ import {
   jwtConfig,
   b2Config,
   throttleConfig,
+  storageConfig,
   googleConfig,
 } from './config/configuration';
 
@@ -38,6 +39,7 @@ import {
         jwtConfig,
         b2Config,
         throttleConfig,
+        storageConfig,
         googleConfig,
       ],
     }),
