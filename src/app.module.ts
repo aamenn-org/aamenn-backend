@@ -56,7 +56,7 @@ import {
         synchronize: configService.get<string>('NODE_ENV') === 'development',
         logging: false,
         ssl:
-          configService.get<string>('NODE_ENV') === 'production'
+          configService.get<string>('DATABASE_SSL') === 'true'
             ? { rejectUnauthorized: false }
             : false,
       }),
