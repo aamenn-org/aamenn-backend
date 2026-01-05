@@ -1,0 +1,25 @@
+name: Deploy to EC2 (Development)
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: Development
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /var/www/Aamenn-Backend
+            git pull origin main
+            docker compose down
+            docker compose build
+            docker compose up -d
+            docker compose logs --tail=50

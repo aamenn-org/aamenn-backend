@@ -9,6 +9,9 @@ dist/
 .env.local
 .env.*.local
 
+# ssh keys
+*.pem
+
 # IDE
 .idea/
 .vscode/
