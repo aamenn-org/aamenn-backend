@@ -13,13 +13,19 @@ import { UsersModule } from '../users/users.module';
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET'),
-        signOptions: {
-          issuer: configService.get<string>('JWT_ISSUER'),
-          audience: configService.get<string>('JWT_AUDIENCE'),
-        },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const issuer = configService.get<string>('JWT_ISSUER') || 'aamenn';
+        const audience =
+          configService.get<string>('JWT_AUDIENCE') || 'aamenn-app';
+
+        return {
+          secret: configService.get<string>('JWT_SECRET'),
+          signOptions: {
+            issuer,
+            audience,
+          },
+        };
+      },
       inject: [ConfigService],
     }),
     UsersModule,

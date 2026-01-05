@@ -11,16 +11,16 @@ import {
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private configService: ConfigService) {
     const jwtSecret = configService.get<string>('JWT_SECRET');
-    const jwtIssuer = configService.get<string>('JWT_ISSUER');
-    const jwtAudience = configService.get<string>('JWT_AUDIENCE');
+    const jwtIssuer = configService.get<string>('JWT_ISSUER') || 'aamenn';
+    const jwtAudience =
+      configService.get<string>('JWT_AUDIENCE') || 'aamenn-app';
 
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: jwtSecret,
       issuer: jwtIssuer,
-      // Only validate audience if it's configured
-      ...(jwtAudience && { audience: jwtAudience }),
+      audience: jwtAudience,
     });
   }
 
