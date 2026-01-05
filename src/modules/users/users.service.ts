@@ -1,9 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { User } from '../../database/entities/user.entity';
 import { UserSecurity } from '../../database/entities/user-security.entity';
+import { File } from '../../database/entities/file.entity';
+import { Album } from '../../database/entities/album.entity';
+import { AlbumFile } from '../../database/entities/album-file.entity';
 import { CreateUserSecurityDto } from './dto/create-user-security.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { B2StorageService } from '../storage/b2-storage.service';
 
 /**
  * Options for finding a user - exactly one must be provided
@@ -16,11 +21,20 @@ export interface FindUserOptions {
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
     @InjectRepository(UserSecurity)
     private userSecurityRepository: Repository<UserSecurity>,
+    @InjectRepository(File)
+    private filesRepository: Repository<File>,
+    @InjectRepository(Album)
+    private albumsRepository: Repository<Album>,
+    @InjectRepository(AlbumFile)
+    private albumFilesRepository: Repository<AlbumFile>,
+    private b2StorageService: B2StorageService,
   ) {}
 
   /**
@@ -114,5 +128,108 @@ export class UsersService {
     });
 
     return this.userSecurityRepository.save(userSecurity);
+  }
+
+  /**
+   * Update user's security parameters (for password change).
+   * Re-encrypts master key with new KEK derived from new password.
+   */
+  async updateSecurityParams(
+    userId: string,
+    encryptedMasterKey: string,
+    kekSalt: string,
+  ): Promise<UserSecurity> {
+    const security = await this.userSecurityRepository.findOne({
+      where: { userId },
+    });
+
+    if (!security) {
+      throw new Error('Security parameters not found');
+    }
+
+    security.encryptedMasterKey = encryptedMasterKey;
+    security.kekSalt = kekSalt;
+
+    return this.userSecurityRepository.save(security);
+  }
+
+  /**
+   * Update user profile information.
+   */
+  async updateProfile(userId: string, dto: UpdateProfileDto): Promise<User> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    if (dto.displayName !== undefined) {
+      user.displayName = dto.displayName;
+    }
+
+    return this.usersRepository.save(user);
+  }
+
+  /**
+   * Update user's password hash.
+   */
+  async updatePasswordHash(
+    userId: string,
+    passwordHash: string,
+  ): Promise<void> {
+    await this.usersRepository.update(userId, { passwordHash });
+  }
+
+  /**
+   * Delete user account and all associated data.
+   * This includes: files from B2, albums, album_files, user_security, user.
+   */
+  async deleteAccount(userId: string): Promise<void> {
+    this.logger.log(`Deleting account for user: ${userId}`);
+
+    // 1. Get all user's files (including soft-deleted)
+    const files = await this.filesRepository.find({
+      where: { userId },
+      withDeleted: true,
+    });
+
+    // 2. Delete files from B2 storage
+    if (files.length > 0) {
+      const b2Paths: string[] = [];
+      for (const file of files) {
+        if (file.b2FilePath) b2Paths.push(file.b2FilePath);
+        if (file.b2ThumbSmallPath) b2Paths.push(file.b2ThumbSmallPath);
+        if (file.b2ThumbMediumPath) b2Paths.push(file.b2ThumbMediumPath);
+      }
+
+      try {
+        if (b2Paths.length > 0) {
+          await this.b2StorageService.deleteFiles(b2Paths);
+          this.logger.log(`Deleted ${b2Paths.length} files from B2`);
+        }
+      } catch (error) {
+        this.logger.error('Failed to delete some files from B2:', error);
+        // Continue with database cleanup even if B2 fails
+      }
+    }
+
+    // 3. Delete all album_files records
+    await this.albumFilesRepository.delete({
+      file: { userId },
+    });
+
+    // 4. Delete all files from database
+    await this.filesRepository.delete({ userId });
+
+    // 5. Delete all albums
+    await this.albumsRepository.delete({ userId });
+
+    // 6. Delete user security
+    await this.userSecurityRepository.delete({ userId });
+
+    // 7. Delete user
+    await this.usersRepository.delete({ id: userId });
+
+    this.logger.log(`Account deleted for user: ${userId}`);
   }
 }

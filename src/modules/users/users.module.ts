@@ -1,12 +1,19 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../../database/entities/user.entity';
 import { UserSecurity } from '../../database/entities/user-security.entity';
+import { File } from '../../database/entities/file.entity';
+import { Album } from '../../database/entities/album.entity';
+import { AlbumFile } from '../../database/entities/album-file.entity';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, UserSecurity])],
+  imports: [
+    TypeOrmModule.forFeature([User, UserSecurity, File, Album, AlbumFile]),
+    forwardRef(() => StorageModule),
+  ],
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService],
