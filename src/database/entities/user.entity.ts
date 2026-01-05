@@ -19,6 +19,14 @@ export class User {
   @Column({ type: 'text', unique: true })
   email: string;
 
+  @Column({
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    name: 'display_name',
+  })
+  displayName: string | null;
+
   @Column({ type: 'text', unique: true, name: 'auth_provider_id' })
   authProviderId: string;
 
