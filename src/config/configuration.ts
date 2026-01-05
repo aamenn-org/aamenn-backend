@@ -38,6 +38,10 @@ export const throttleConfig = registerAs('throttle', () => ({
   limit: parseInt(process.env.THROTTLE_LIMIT || '100', 10),
 }));
 
+export const storageConfig = registerAs('storage', () => ({
+  limitGb: parseFloat(process.env.STORAGE_LIMIT_GB || '1'),
+}));
+
 export const googleConfig = registerAs('google', () => ({
   clientId: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
