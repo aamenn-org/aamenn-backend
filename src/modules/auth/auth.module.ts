@@ -17,6 +17,7 @@ import { UsersModule } from '../users/users.module';
         secret: configService.get<string>('JWT_SECRET'),
         signOptions: {
           issuer: configService.get<string>('JWT_ISSUER'),
+          audience: configService.get<string>('JWT_AUDIENCE'),
         },
       }),
       inject: [ConfigService],
