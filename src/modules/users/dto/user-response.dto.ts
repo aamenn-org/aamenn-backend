@@ -16,6 +16,21 @@ export class CurrentUserResponseDto {
   })
   email: string;
 
+  @ApiPropertyOptional({
+    description: 'User display name',
+    example: 'John Doe',
+    nullable: true,
+  })
+  displayName: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Authentication provider',
+    example: 'local',
+    enum: ['local', 'google'],
+    nullable: true,
+  })
+  authProvider?: string | null;
+
   @ApiProperty({
     description: 'Whether user has set up security parameters',
     example: true,
