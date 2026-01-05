@@ -22,9 +22,13 @@ COPY package*.json ./
 RUN npm install --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/scripts/start.sh ./scripts/start.sh
+
+# Make start script executable
+RUN chmod +x ./scripts/start.sh && chown nestjs:nodejs ./scripts/start.sh
 
 USER nestjs
 
 EXPOSE 3000
 
-CMD ["node", "dist/src/main"]
+CMD ["./scripts/start.sh"]
