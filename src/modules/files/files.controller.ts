@@ -40,6 +40,32 @@ export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   /**
+   * Get storage usage for the authenticated user.
+   * Returns current usage, limit, and whether storage is exceeded.
+   */
+  @Get('storage-usage')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get storage usage',
+    description: `Returns the current storage usage for the authenticated user.
+
+**Response includes:**
+- usedBytes: Total bytes currently used
+- usedGb: Usage in gigabytes (rounded to 2 decimals)
+- limitBytes: Maximum allowed storage in bytes
+- limitGb: Maximum allowed storage in gigabytes
+- exceeded: Boolean indicating if limit is reached
+- percentUsed: Usage as a percentage (0-100)`,
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Storage usage retrieved successfully',
+  })
+  async getStorageUsage(@CurrentUser() authUser: AuthenticatedUser) {
+    return this.filesService.getStorageUsage(authUser.userId);
+  }
+
+  /**
    * Check if a file with the given content hash already exists.
    * This is used for duplicate detection before uploading.
    *

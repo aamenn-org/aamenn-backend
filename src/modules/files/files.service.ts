@@ -5,6 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { Repository, IsNull, In } from 'typeorm';
 import { File } from '../../database/entities/file.entity';
 import { AlbumFile } from '../../database/entities/album-file.entity';
@@ -34,6 +35,7 @@ export class FilesService {
     private albumFilesRepository: Repository<AlbumFile>,
     private b2StorageService: B2StorageService,
     private thumbnailService: ThumbnailService,
+    private configService: ConfigService,
   ) {}
 
   /**
@@ -602,5 +604,33 @@ export class FilesService {
     await this.filesRepository.remove(file);
 
     return { success: true, message: 'File permanently deleted' };
+  }
+
+  /**
+   * Get storage usage for a user.
+   * Returns current usage, limit, and whether exceeded.
+   */
+  async getStorageUsage(userId: string) {
+    // Get total bytes used by user (excluding soft-deleted files)
+    const result = await this.filesRepository
+      .createQueryBuilder('file')
+      .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
+      .where('file.userId = :userId', { userId })
+      .andWhere('file.deletedAt IS NULL')
+      .getRawOne();
+
+    const usedBytes = parseInt(result.totalBytes, 10) || 0;
+    const limitGb = this.configService.get<number>('storage.limitGb', 1);
+    const limitBytes = limitGb * 1024 * 1024 * 1024; // Convert GB to bytes
+    const usedGb = usedBytes / (1024 * 1024 * 1024);
+
+    return {
+      usedBytes,
+      usedGb: Math.round(usedGb * 100) / 100, // Round to 2 decimal places
+      limitBytes,
+      limitGb,
+      exceeded: usedBytes >= limitBytes,
+      percentUsed: Math.min(Math.round((usedBytes / limitBytes) * 100), 100),
+    };
   }
 }
