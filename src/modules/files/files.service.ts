@@ -151,10 +151,55 @@ export class FilesService {
     // Generate file path for original
     const b2FilePath = this.b2StorageService.generateFilePath(userId);
 
-    // Upload original file to B2
-    await this.b2StorageService.uploadFile(b2FilePath, fileBuffer, sha1Hash);
+    // Prepare thumbnail paths if thumbnails are provided
+    let thumbSmallPath: string | null = null;
+    let thumbMediumPath: string | null = null;
 
-    // Create file record with basic data
+    if (thumbnailData) {
+      thumbSmallPath = this.b2StorageService.generateFilePath(
+        userId,
+        'thumb-small',
+      );
+      thumbMediumPath = this.b2StorageService.generateFilePath(
+        userId,
+        'thumb-medium',
+      );
+    }
+
+    // Compute thumbnail hashes in parallel (CPU-bound, fast)
+    const [thumbSmallHash, thumbMediumHash] = thumbnailData
+      ? await Promise.all([
+          this.computeSha1(thumbnailData.thumbSmallBuffer),
+          this.computeSha1(thumbnailData.thumbMediumBuffer),
+        ])
+      : [null, null];
+
+    // Upload ALL files to B2 in parallel (main file + both thumbnails)
+    // This significantly reduces total upload time vs sequential uploads
+    const uploadPromises: Promise<void>[] = [
+      this.b2StorageService.uploadFile(b2FilePath, fileBuffer, sha1Hash),
+    ];
+
+    if (thumbnailData && thumbSmallPath && thumbMediumPath) {
+      this.logger.debug('Uploading main file and thumbnails in parallel...');
+      uploadPromises.push(
+        this.b2StorageService.uploadFile(
+          thumbSmallPath,
+          thumbnailData.thumbSmallBuffer,
+          thumbSmallHash!,
+        ),
+        this.b2StorageService.uploadFile(
+          thumbMediumPath,
+          thumbnailData.thumbMediumBuffer,
+          thumbMediumHash!,
+        ),
+      );
+    }
+
+    await Promise.all(uploadPromises);
+    this.logger.debug('All B2 uploads completed');
+
+    // Create file record with all data
     const file = this.filesRepository.create({
       userId,
       b2FilePath,
@@ -165,35 +210,8 @@ export class FilesService {
       contentHash: dto.contentHash || null,
     });
 
-    // If thumbnail data is provided, upload thumbnails
-    if (thumbnailData) {
-      this.logger.debug('Uploading thumbnails...');
-
-      // Generate thumbnail paths
-      const thumbSmallPath = this.b2StorageService.generateFilePath(
-        userId,
-        'thumb-small',
-      );
-      const thumbMediumPath = this.b2StorageService.generateFilePath(
-        userId,
-        'thumb-medium',
-      );
-
-      // Upload thumbnails to B2 in parallel
-      await Promise.all([
-        this.b2StorageService.uploadFile(
-          thumbSmallPath,
-          thumbnailData.thumbSmallBuffer,
-          await this.computeSha1(thumbnailData.thumbSmallBuffer),
-        ),
-        this.b2StorageService.uploadFile(
-          thumbMediumPath,
-          thumbnailData.thumbMediumBuffer,
-          await this.computeSha1(thumbnailData.thumbMediumBuffer),
-        ),
-      ]);
-
-      // Update file record with thumbnail data
+    // Add thumbnail data if provided
+    if (thumbnailData && thumbSmallPath && thumbMediumPath) {
       file.b2ThumbSmallPath = thumbSmallPath;
       file.b2ThumbMediumPath = thumbMediumPath;
       file.cipherThumbSmallKey = thumbnailData.cipherThumbSmallKey;
@@ -204,8 +222,6 @@ export class FilesService {
       if (thumbnailData.duration !== undefined) {
         file.duration = thumbnailData.duration;
       }
-
-      this.logger.debug('Thumbnails uploaded successfully');
     }
 
     await this.filesRepository.save(file);

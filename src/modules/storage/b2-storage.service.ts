@@ -23,6 +23,16 @@ export class B2StorageService implements IStorageService, OnModuleInit {
   private authToken: string;
   private signedUrlExpiration: number;
 
+  // Upload URL cache for reducing B2 API calls
+  // B2 upload URLs can be reused until they fail (usually ~24 hours)
+  private uploadUrlCache: {
+    uploadUrl: string;
+    authorizationToken: string;
+    lastFetched: number;
+  } | null = null;
+  private uploadUrlLock: Promise<void> | null = null;
+  private readonly UPLOAD_URL_TTL_MS = 60 * 60 * 1000; // 1 hour cache TTL
+
   constructor(private configService: ConfigService) {
     this.bucketId = this.configService.getOrThrow<string>('B2_BUCKET_ID');
     this.bucketName = this.configService.getOrThrow<string>('B2_BUCKET_NAME');
@@ -137,27 +147,28 @@ export class B2StorageService implements IStorageService, OnModuleInit {
   /**
    * Upload file directly to B2 (proxy upload through backend).
    * This avoids CORS issues by uploading through the backend.
+   * Uses cached upload URLs to reduce B2 API calls.
    */
   async uploadFile(
     b2FilePath: string,
     fileBuffer: Buffer,
     sha1Hash: string,
     retryCount = 0,
+    forceNewUrl = false,
   ): Promise<void> {
     const MAX_RETRIES = 3;
     const RETRY_DELAYS = [1000, 2000, 4000]; // Exponential backoff
 
     try {
-      // Get upload URL from B2
-      const response = await this.b2.getUploadUrl({
-        bucketId: this.bucketId,
-      });
+      // Get or refresh upload URL (cached for 1 hour)
+      const { uploadUrl, authorizationToken } =
+        await this.getOrRefreshUploadUrl(forceNewUrl);
 
       // Upload file to B2 using fetch since B2 SDK uploadFile has issues
-      const uploadResponse = await fetch(response.data.uploadUrl, {
+      const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
-          Authorization: response.data.authorizationToken,
+          Authorization: authorizationToken,
           'Content-Type': 'application/octet-stream',
           'X-Bz-File-Name': encodeURIComponent(b2FilePath),
           'X-Bz-Content-Sha1': sha1Hash,
@@ -168,6 +179,27 @@ export class B2StorageService implements IStorageService, OnModuleInit {
 
       if (!uploadResponse.ok) {
         const errorText = await uploadResponse.text();
+
+        // If upload URL expired or invalid, invalidate cache and retry
+        if (
+          uploadResponse.status === 401 ||
+          uploadResponse.status === 503 ||
+          errorText.includes('expired')
+        ) {
+          this.uploadUrlCache = null;
+          if (retryCount < MAX_RETRIES) {
+            this.logger.warn(
+              `Upload URL invalid/expired, refreshing and retrying...`,
+            );
+            return this.uploadFile(
+              b2FilePath,
+              fileBuffer,
+              sha1Hash,
+              retryCount + 1,
+              true,
+            );
+          }
+        }
         throw new Error(`B2 upload failed: ${errorText}`);
       }
 
@@ -179,7 +211,14 @@ export class B2StorageService implements IStorageService, OnModuleInit {
       // Try re-authorizing if token expired
       if (error.response?.status === 401 || error.message?.includes('401')) {
         await this.authorize();
-        return this.uploadFile(b2FilePath, fileBuffer, sha1Hash, retryCount);
+        this.uploadUrlCache = null; // Invalidate cache on re-auth
+        return this.uploadFile(
+          b2FilePath,
+          fileBuffer,
+          sha1Hash,
+          retryCount,
+          true,
+        );
       }
 
       // Retry on network errors (fetch failed)
@@ -199,10 +238,70 @@ export class B2StorageService implements IStorageService, OnModuleInit {
           fileBuffer,
           sha1Hash,
           retryCount + 1,
+          false,
         );
       }
 
       throw new InternalServerErrorException('Failed to upload file');
+    }
+  }
+
+  /**
+   * Get cached upload URL or fetch a new one.
+   * Implements a lock to prevent thundering herd when cache expires.
+   */
+  private async getOrRefreshUploadUrl(
+    forceRefresh = false,
+  ): Promise<{ uploadUrl: string; authorizationToken: string }> {
+    const now = Date.now();
+
+    // Return cached URL if valid and not forcing refresh
+    if (
+      !forceRefresh &&
+      this.uploadUrlCache &&
+      now - this.uploadUrlCache.lastFetched < this.UPLOAD_URL_TTL_MS
+    ) {
+      return {
+        uploadUrl: this.uploadUrlCache.uploadUrl,
+        authorizationToken: this.uploadUrlCache.authorizationToken,
+      };
+    }
+
+    // If another request is already refreshing, wait for it
+    if (this.uploadUrlLock) {
+      await this.uploadUrlLock;
+      // After waiting, check cache again
+      if (this.uploadUrlCache) {
+        return {
+          uploadUrl: this.uploadUrlCache.uploadUrl,
+          authorizationToken: this.uploadUrlCache.authorizationToken,
+        };
+      }
+    }
+
+    // Acquire lock and fetch new URL
+    let resolve: () => void;
+    this.uploadUrlLock = new Promise((r) => (resolve = r));
+
+    try {
+      this.logger.debug('Fetching new B2 upload URL...');
+      const response = await this.b2.getUploadUrl({
+        bucketId: this.bucketId,
+      });
+
+      this.uploadUrlCache = {
+        uploadUrl: response.data.uploadUrl,
+        authorizationToken: response.data.authorizationToken,
+        lastFetched: Date.now(),
+      };
+
+      return {
+        uploadUrl: this.uploadUrlCache.uploadUrl,
+        authorizationToken: this.uploadUrlCache.authorizationToken,
+      };
+    } finally {
+      resolve!();
+      this.uploadUrlLock = null;
     }
   }
 

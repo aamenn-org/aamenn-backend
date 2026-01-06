@@ -19,17 +19,17 @@ async function runMigrations() {
   try {
     console.log('Initializing data source...');
     await AppDataSource.initialize();
-    
+
     console.log('Running pending migrations...');
     const migrations = await AppDataSource.runMigrations();
-    
+
     if (migrations.length > 0) {
       console.log(`Successfully ran ${migrations.length} migration(s):`);
-      migrations.forEach(m => console.log(`  - ${m.name}`));
+      migrations.forEach((m) => console.log(`  - ${m.name}`));
     } else {
       console.log('No pending migrations to run.');
     }
-    
+
     await AppDataSource.destroy();
     console.log('Migration process completed successfully.');
     process.exit(0);
