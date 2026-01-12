@@ -171,6 +171,13 @@ export class UsersService {
   }
 
   /**
+   * Update user's last login timestamp.
+   */
+  async updateLastLogin(userId: string): Promise<void> {
+    await this.usersRepository.update(userId, { lastLoginAt: new Date() });
+  }
+
+  /**
    * Update user's password hash.
    */
   async updatePasswordHash(

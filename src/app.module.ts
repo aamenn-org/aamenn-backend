@@ -9,12 +9,14 @@ import { UsersModule } from './modules/users/users.module';
 import { FilesModule } from './modules/files/files.module';
 import { AlbumsModule } from './modules/albums/albums.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 import { User } from './database/entities/user.entity';
 import { UserSecurity } from './database/entities/user-security.entity';
 import { File } from './database/entities/file.entity';
 import { Album } from './database/entities/album.entity';
 import { AlbumFile } from './database/entities/album-file.entity';
+import { DownloadLog } from './database/entities/download-log.entity';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import {
@@ -54,7 +56,7 @@ import {
         username: configService.get<string>('DATABASE_USERNAME', 'postgres'),
         password: configService.get<string>('DATABASE_PASSWORD'),
         database: configService.get<string>('DATABASE_NAME', 'aamenn_vault'),
-        entities: [User, UserSecurity, File, Album, AlbumFile],
+        entities: [User, UserSecurity, File, Album, AlbumFile, DownloadLog],
         synchronize: configService.get<string>('NODE_ENV') === 'development',
         logging: false,
         ssl:
@@ -85,6 +87,7 @@ import {
     FilesModule,
     AlbumsModule,
     StorageModule,
+    AdminModule,
   ],
   providers: [
     // Global rate limiting guard
