@@ -19,9 +19,14 @@ RUN addgroup -g 1001 -S nodejs && \
     adduser -S nestjs -u 1001
 
 COPY package*.json ./
-RUN npm install --omit=dev && npm cache clean --force
+# Install production deps + ts-node for running seed scripts
+RUN npm install --omit=dev && \
+    npm install ts-node typescript tsconfig-paths && \
+    npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 COPY --from=builder /app/scripts/start.sh ./scripts/start.sh
 
 # Make start script executable
