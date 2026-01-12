@@ -1,3 +1,5 @@
+import { UserRole } from '../../../database/entities/user.entity';
+
 /**
  * JWT Token Payload
  * Contains user identification data stored in the JWT
@@ -7,6 +9,8 @@ export interface JwtPayload {
   sub: string;
   /** User email */
   email?: string;
+  /** User role */
+  role?: UserRole;
   /** Token issuer */
   iss: string;
   /** Token audience */
@@ -26,6 +30,8 @@ export interface AuthenticatedUser {
   userId: string;
   /** User email */
   email?: string;
+  /** User role */
+  role?: UserRole;
 }
 
 /**
@@ -39,6 +45,8 @@ export interface TokenResponse {
   refreshToken: string;
   expiresIn: number;
   tokenType: string;
+  /** User role (admin/user) */
+  role?: UserRole;
   /** Master key encrypted with KEK (base64) - client decrypts locally */
   encryptedMasterKey?: string;
   /** Salt for KEK derivation (base64) */

@@ -11,6 +11,11 @@ import { UserSecurity } from './user-security.entity';
 import { File } from './file.entity';
 import { Album } from './album.entity';
 
+export enum UserRole {
+  USER = 'user',
+  ADMIN = 'admin',
+}
+
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -35,6 +40,19 @@ export class User {
 
   @Column({ type: 'text', nullable: true, name: 'auth_provider' })
   authProvider: string | null;
+
+  @Column({
+    type: 'varchar',
+    length: 20,
+    default: UserRole.USER,
+  })
+  role: UserRole;
+
+  @Column({ type: 'boolean', name: 'is_active', default: true })
+  isActive: boolean;
+
+  @Column({ type: 'timestamp', name: 'last_login_at', nullable: true })
+  lastLoginAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

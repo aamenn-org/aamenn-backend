@@ -11,6 +11,7 @@ import { UsersService } from '../users/users.service';
 import { RegisterDto, LoginDto, RefreshTokenDto } from './dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { TokenResponse } from './interfaces/jwt-payload.interface';
+import { UserRole } from '../../database/entities/user.entity';
 
 const AUTH_PROVIDER = {
   LOCAL: 'local',
@@ -89,6 +90,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Check if user is active
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is disabled');
+    }
+
     const isPasswordValid = await bcrypt.compare(
       dto.password,
       user.passwordHash,
@@ -97,13 +103,17 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const tokens = await this.generateTokens(user.id, user.email);
+    // Update last login timestamp
+    await this.usersService.updateLastLogin(user.id);
+
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
 
     // Get encrypted master key and KDF params for client-side decryption
     const security = await this.usersService.getUserSecurity(user.id);
 
     return {
       ...tokens,
+      role: user.role,
       encryptedMasterKey: security?.encryptedMasterKey,
       kekSalt: security?.kekSalt,
       kdfParams: security?.kdfParams,
@@ -128,7 +138,12 @@ export class AuthService {
         throw new UnauthorizedException('User not found');
       }
 
-      return this.generateTokens(user.id, user.email);
+      // Check if user is still active
+      if (!user.isActive) {
+        throw new UnauthorizedException('Account is disabled');
+      }
+
+      return this.generateTokens(user.id, user.email, user.role);
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -140,6 +155,7 @@ export class AuthService {
   private async generateTokens(
     userId: string,
     email: string,
+    role: UserRole = UserRole.USER,
   ): Promise<TokenResponse> {
     const accessTokenExpiration = this.configService.get<string>(
       'JWT_ACCESS_EXPIRATION',
@@ -155,6 +171,7 @@ export class AuthService {
         {
           sub: userId,
           email,
+          role,
           type: 'access',
         },
         { expiresIn: accessTokenExpiration },
@@ -163,6 +180,7 @@ export class AuthService {
         {
           sub: userId,
           email,
+          role,
           type: 'refresh',
         },
         { expiresIn: refreshTokenExpiration },
@@ -177,6 +195,7 @@ export class AuthService {
       refreshToken,
       expiresIn,
       tokenType: TOKEN_TYPE,
+      role,
     };
   }
 

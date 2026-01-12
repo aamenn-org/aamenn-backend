@@ -9,6 +9,10 @@ import { ConfigService } from '@nestjs/config';
 import { Repository, IsNull, In } from 'typeorm';
 import { File } from '../../database/entities/file.entity';
 import { AlbumFile } from '../../database/entities/album-file.entity';
+import {
+  DownloadLog,
+  DownloadType,
+} from '../../database/entities/download-log.entity';
 import { B2StorageService } from '../storage/b2-storage.service';
 import { ThumbnailService } from './thumbnail.service';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
@@ -33,6 +37,8 @@ export class FilesService {
     private filesRepository: Repository<File>,
     @InjectRepository(AlbumFile)
     private albumFilesRepository: Repository<AlbumFile>,
+    @InjectRepository(DownloadLog)
+    private downloadLogsRepository: Repository<DownloadLog>,
     private b2StorageService: B2StorageService,
     private thumbnailService: ThumbnailService,
     private configService: ConfigService,
@@ -252,6 +258,36 @@ export class FilesService {
   }
 
   /**
+   * Log a file view request for statistics tracking.
+   *
+   * IMPORTANT: This is called when a download URL is GENERATED, not when the
+   * actual download occurs. In our zero-knowledge architecture, we cannot track
+   * actual B2 downloads since clients download directly from signed URLs.
+   *
+   * This metric represents "file view intents" - when a user requests access to a file.
+   * The actual download may or may not occur after the URL is generated.
+   *
+   * @param userId - The user requesting the file
+   * @param fileId - The file being requested
+   * @param sizeBytes - The file size (used for bandwidth estimation)
+   * @param downloadType - The type of asset (original, thumb_small, thumb_medium)
+   */
+  private async logDownload(
+    userId: string,
+    fileId: string,
+    sizeBytes: number,
+    downloadType: DownloadType,
+  ): Promise<void> {
+    const downloadLog = this.downloadLogsRepository.create({
+      userId,
+      fileId,
+      sizeBytes,
+      downloadType,
+    });
+    await this.downloadLogsRepository.save(downloadLog);
+  }
+
+  /**
    * Get multiple files metadata and download URLs in batch.
    * Optimized for viewer preloading - processes all files in parallel.
    */
@@ -280,6 +316,16 @@ export class FilesService {
                   )
                 : Promise.resolve(null),
             ]);
+
+          // Log download for bandwidth tracking (fire and forget)
+          this.logDownload(
+            userId,
+            file.id,
+            file.sizeBytes || 0,
+            DownloadType.ORIGINAL,
+          ).catch((err) =>
+            this.logger.warn(`Failed to log download: ${err.message}`),
+          );
 
           return {
             fileId: file.id,
@@ -357,6 +403,16 @@ export class FilesService {
       );
       thumbMediumUrl = result.downloadUrl;
     }
+
+    // Log download for bandwidth tracking (fire and forget)
+    this.logDownload(
+      userId,
+      file.id,
+      file.sizeBytes || 0,
+      DownloadType.ORIGINAL,
+    ).catch((err) =>
+      this.logger.warn(`Failed to log download: ${err.message}`),
+    );
 
     return {
       fileId: file.id,
