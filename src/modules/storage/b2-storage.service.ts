@@ -174,7 +174,7 @@ export class B2StorageService implements IStorageService, OnModuleInit {
 
       this.logger.log(`File uploaded successfully: ${b2FilePath}`);
     } catch (error: any) {
-      this.logger.error('Failed to upload file to B2');
+      this.logger.error('Failedd to upload file to B2');
       this.logger.error(error.message || error);
 
       // Try re-authorizing if token expired
