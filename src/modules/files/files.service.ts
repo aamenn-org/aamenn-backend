@@ -20,8 +20,10 @@ import { InitiateUploadDto } from './dto/initiate-upload.dto';
 interface ThumbnailData {
   cipherThumbSmallKey: string;
   cipherThumbMediumKey: string;
+  cipherThumbLargeKey: string;
   thumbSmallBuffer: Buffer;
   thumbMediumBuffer: Buffer;
+  thumbLargeBuffer: Buffer;
   blurhash: string | null;
   width: number | null;
   height: number | null;
@@ -145,6 +147,7 @@ export class FilesService {
     dto: InitiateUploadDto & {
       cipherThumbSmallKey?: string;
       cipherThumbMediumKey?: string;
+      cipherThumbLargeKey?: string;
     },
     fileBuffer: Buffer,
     sha1Hash: string,
@@ -160,6 +163,7 @@ export class FilesService {
     // Prepare thumbnail paths if thumbnails are provided
     let thumbSmallPath: string | null = null;
     let thumbMediumPath: string | null = null;
+    let thumbLargePath: string | null = null;
 
     if (thumbnailData) {
       thumbSmallPath = this.b2StorageService.generateFilePath(
@@ -170,15 +174,20 @@ export class FilesService {
         userId,
         'thumb-medium',
       );
+      thumbLargePath = this.b2StorageService.generateFilePath(
+        userId,
+        'thumb-large',
+      );
     }
 
     // Compute thumbnail hashes in parallel (CPU-bound, fast)
-    const [thumbSmallHash, thumbMediumHash] = thumbnailData
+    const [thumbSmallHash, thumbMediumHash, thumbLargeHash] = thumbnailData
       ? await Promise.all([
           this.computeSha1(thumbnailData.thumbSmallBuffer),
           this.computeSha1(thumbnailData.thumbMediumBuffer),
+          this.computeSha1(thumbnailData.thumbLargeBuffer),
         ])
-      : [null, null];
+      : [null, null, null];
 
     // Upload ALL files to B2 in parallel (main file + both thumbnails)
     // This significantly reduces total upload time vs sequential uploads
@@ -186,7 +195,7 @@ export class FilesService {
       this.b2StorageService.uploadFile(b2FilePath, fileBuffer, sha1Hash),
     ];
 
-    if (thumbnailData && thumbSmallPath && thumbMediumPath) {
+    if (thumbnailData && thumbSmallPath && thumbMediumPath && thumbLargePath) {
       this.logger.debug('Uploading main file and thumbnails in parallel...');
       uploadPromises.push(
         this.b2StorageService.uploadFile(
@@ -198,6 +207,11 @@ export class FilesService {
           thumbMediumPath,
           thumbnailData.thumbMediumBuffer,
           thumbMediumHash!,
+        ),
+        this.b2StorageService.uploadFile(
+          thumbLargePath,
+          thumbnailData.thumbLargeBuffer,
+          thumbLargeHash!,
         ),
       );
     }
@@ -217,11 +231,13 @@ export class FilesService {
     });
 
     // Add thumbnail data if provided
-    if (thumbnailData && thumbSmallPath && thumbMediumPath) {
+    if (thumbnailData && thumbSmallPath && thumbMediumPath && thumbLargePath) {
       file.b2ThumbSmallPath = thumbSmallPath;
       file.b2ThumbMediumPath = thumbMediumPath;
+      file.b2ThumbLargePath = thumbLargePath;
       file.cipherThumbSmallKey = thumbnailData.cipherThumbSmallKey;
       file.cipherThumbMediumKey = thumbnailData.cipherThumbMediumKey;
+      file.cipherThumbLargeKey = thumbnailData.cipherThumbLargeKey;
       file.blurhash = thumbnailData.blurhash;
       file.width = thumbnailData.width;
       file.height = thumbnailData.height;
@@ -302,7 +318,7 @@ export class FilesService {
       files.map(async (file) => {
         try {
           // Get signed download URLs in parallel
-          const [downloadResult, thumbSmallResult, thumbMediumResult] =
+          const [downloadResult, thumbSmallResult, thumbMediumResult, thumbLargeResult] =
             await Promise.all([
               this.b2StorageService.getSignedDownloadUrl(file.b2FilePath),
               file.b2ThumbSmallPath
@@ -313,6 +329,11 @@ export class FilesService {
               file.b2ThumbMediumPath
                 ? this.b2StorageService.getSignedDownloadUrl(
                     file.b2ThumbMediumPath,
+                  )
+                : Promise.resolve(null),
+              file.b2ThumbLargePath
+                ? this.b2StorageService.getSignedDownloadUrl(
+                    file.b2ThumbLargePath,
                   )
                 : Promise.resolve(null),
             ]);
@@ -332,6 +353,7 @@ export class FilesService {
             cipherFileKey: file.cipherFileKey,
             cipherThumbSmallKey: file.cipherThumbSmallKey,
             cipherThumbMediumKey: file.cipherThumbMediumKey,
+            cipherThumbLargeKey: file.cipherThumbLargeKey,
             fileNameEncrypted: file.fileNameEncrypted,
             mimeType: file.mimeType,
             sizeBytes: file.sizeBytes,
@@ -342,6 +364,7 @@ export class FilesService {
             downloadUrl: downloadResult.downloadUrl,
             thumbSmallUrl: thumbSmallResult?.downloadUrl || null,
             thumbMediumUrl: thumbMediumResult?.downloadUrl || null,
+            thumbLargeUrl: thumbLargeResult?.downloadUrl || null,
             createdAt: file.createdAt,
             updatedAt: file.updatedAt,
           };
@@ -389,6 +412,7 @@ export class FilesService {
     // Get thumbnail URLs if available
     let thumbSmallUrl: string | null = null;
     let thumbMediumUrl: string | null = null;
+    let thumbLargeUrl: string | null = null;
 
     if (file.b2ThumbSmallPath) {
       const result = await this.b2StorageService.getSignedDownloadUrl(
@@ -402,6 +426,13 @@ export class FilesService {
         file.b2ThumbMediumPath,
       );
       thumbMediumUrl = result.downloadUrl;
+    }
+
+    if (file.b2ThumbLargePath) {
+      const result = await this.b2StorageService.getSignedDownloadUrl(
+        file.b2ThumbLargePath,
+      );
+      thumbLargeUrl = result.downloadUrl;
     }
 
     // Log download for bandwidth tracking (fire and forget)
@@ -419,6 +450,7 @@ export class FilesService {
       cipherFileKey: file.cipherFileKey,
       cipherThumbSmallKey: file.cipherThumbSmallKey,
       cipherThumbMediumKey: file.cipherThumbMediumKey,
+      cipherThumbLargeKey: file.cipherThumbLargeKey,
       fileNameEncrypted: file.fileNameEncrypted,
       mimeType: file.mimeType,
       sizeBytes: file.sizeBytes,
@@ -429,6 +461,7 @@ export class FilesService {
       downloadUrl,
       thumbSmallUrl,
       thumbMediumUrl,
+      thumbLargeUrl,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     };
@@ -571,12 +604,12 @@ export class FilesService {
   }
 
   /**
-   * Update file properties (e.g., favorite status).
+   * Update file properties (e.g., favorite status, filename).
    */
   async updateFile(
     fileId: string,
     userId: string,
-    updates: { isFavorite?: boolean },
+    updates: { isFavorite?: boolean; fileNameEncrypted?: string },
   ) {
     const file = await this.verifyFileOwnership(fileId, userId);
 
@@ -584,11 +617,16 @@ export class FilesService {
       file.isFavorite = updates.isFavorite;
     }
 
+    if (updates.fileNameEncrypted !== undefined) {
+      file.fileNameEncrypted = updates.fileNameEncrypted;
+    }
+
     await this.filesRepository.save(file);
 
     return {
       fileId: file.id,
       isFavorite: file.isFavorite,
+      fileNameEncrypted: file.fileNameEncrypted,
       updatedAt: file.updatedAt,
     };
   }

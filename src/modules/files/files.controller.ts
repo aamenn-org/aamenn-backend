@@ -111,7 +111,7 @@ export class FilesController {
 Backend never sees plaintext file data - only encrypted blob.
 
 **Thumbnails (optional):**
-Include thumbSmall, thumbMedium, cipherThumbSmallKey, cipherThumbMediumKey, blurhash, width, height for images/videos.`,
+Include thumbSmall, thumbMedium, thumbLarge, cipherThumbSmallKey, cipherThumbMediumKey, cipherThumbLargeKey, blurhash, width, height for images/videos.`,
   })
   @ApiResponse({
     status: HttpStatus.CREATED,
@@ -127,8 +127,10 @@ Include thumbSmall, thumbMedium, cipherThumbSmallKey, cipherThumbMediumKey, blur
     @Body('contentHash') contentHash?: string,
     @Body('cipherThumbSmallKey') cipherThumbSmallKey?: string,
     @Body('cipherThumbMediumKey') cipherThumbMediumKey?: string,
+    @Body('cipherThumbLargeKey') cipherThumbLargeKey?: string,
     @Body('thumbSmall') thumbSmallBase64?: string,
     @Body('thumbMedium') thumbMediumBase64?: string,
+    @Body('thumbLarge') thumbLargeBase64?: string,
     @Body('blurhash') blurhash?: string,
     @Body('width') width?: string,
     @Body('height') height?: string,
@@ -151,14 +153,18 @@ Include thumbSmall, thumbMedium, cipherThumbSmallKey, cipherThumbMediumKey, blur
     if (
       thumbSmallBase64 &&
       thumbMediumBase64 &&
+      thumbLargeBase64 &&
       cipherThumbSmallKey &&
-      cipherThumbMediumKey
+      cipherThumbMediumKey &&
+      cipherThumbLargeKey
     ) {
       thumbnailData = {
         cipherThumbSmallKey,
         cipherThumbMediumKey,
+        cipherThumbLargeKey,
         thumbSmallBuffer: Buffer.from(thumbSmallBase64, 'base64'),
         thumbMediumBuffer: Buffer.from(thumbMediumBase64, 'base64'),
+        thumbLargeBuffer: Buffer.from(thumbLargeBase64, 'base64'),
         blurhash: blurhash || null,
         width: width ? parseInt(width, 10) : null,
         height: height ? parseInt(height, 10) : null,

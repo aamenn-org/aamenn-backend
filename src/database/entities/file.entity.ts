@@ -38,6 +38,12 @@ export class File {
   b2ThumbMediumPath: string | null;
 
   /**
+   * B2 path for large thumbnail (target 20-30% of original file size)
+   */
+  @Column({ type: 'text', name: 'b2_thumb_large_path', nullable: true })
+  b2ThumbLargePath: string | null;
+
+  /**
    * The file encryption key, encrypted with the user's master key.
    * Backend cannot decrypt this - only the client can.
    */
@@ -55,6 +61,12 @@ export class File {
    */
   @Column({ type: 'text', name: 'cipher_thumb_medium_key', nullable: true })
   cipherThumbMediumKey: string | null;
+
+  /**
+   * Encryption key for large thumbnail, encrypted with user's master key
+   */
+  @Column({ type: 'text', name: 'cipher_thumb_large_key', nullable: true })
+  cipherThumbLargeKey: string | null;
 
   /**
    * The original filename, encrypted client-side.
