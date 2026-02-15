@@ -96,7 +96,14 @@ export class FilesController {
    */
   @Post('upload')
   @HttpCode(HttpStatus.CREATED)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: {
+        fileSize: 500 * 1024 * 1024, // 500MB max file size
+        fieldSize: 50 * 1024 * 1024, // 50MB max field size (for base64 thumbnails)
+      },
+    }),
+  )
   @ApiOperation({
     summary: 'Upload file (proxy through backend)',
     description: `Upload encrypted file through backend to avoid CORS issues.
