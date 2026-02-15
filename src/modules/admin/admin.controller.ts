@@ -56,7 +56,7 @@ export class AdminController {
   @ApiOperation({
     summary: 'Get all users with statistics',
     description:
-      'Returns paginated list of users with their storage and file statistics.',
+      'Returns paginated list of users with their storage and file statistics. Use sortBy=storage&sortOrder=DESC&limit=10 to get top storage users.',
   })
   @ApiResponse({ status: HttpStatus.OK, description: 'List of users' })
   @ApiResponse({
@@ -67,23 +67,6 @@ export class AdminController {
     return this.adminService.getUsers(query);
   }
 
-  /**
-   * Get top users by storage
-   */
-  @Get('users/top-storage')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Get top users by storage usage',
-    description: 'Returns users sorted by storage consumption (heavy users).',
-  })
-  @ApiResponse({ status: HttpStatus.OK, description: 'List of top users' })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Admin access required',
-  })
-  async getTopUsersByStorage(@Query('limit') limit?: number) {
-    return this.adminService.getTopUsersByStorage(limit || 10);
-  }
 
   /**
    * Update user status (enable/disable)

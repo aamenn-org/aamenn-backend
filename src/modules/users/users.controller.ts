@@ -171,7 +171,7 @@ Requires password verification for local auth users.`,
    * Get user's security parameters (encrypted master key and KDF params).
    * Client uses these to derive KEK and decrypt master key locally.
    */
-  @Get('security')
+  @Get('me/security')
   @ApiOperation({
     summary: 'Get security parameters',
     description: `Returns the user's security parameters for zero-knowledge encryption.
@@ -215,7 +215,7 @@ Requires password verification for local auth users.`,
    * NOTE: This is now handled automatically during registration.
    * This endpoint is kept for manual setup if needed.
    */
-  @Post('security')
+  @Post('me/security')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Setup security parameters',
@@ -255,5 +255,31 @@ Requires password verification for local auth users.`,
       success: true,
       message: 'Security parameters configured successfully',
     };
+  }
+
+  /**
+   * Get storage usage for the authenticated user.
+   */
+  @Get('me/storage')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get storage usage',
+    description: `Returns the current storage usage for the authenticated user.
+
+**Response includes:**
+- usedBytes: Total bytes currently used
+- usedGb: Usage in gigabytes (rounded to 2 decimals)
+- limitBytes: Maximum allowed storage in bytes
+- limitGb: Maximum allowed storage in gigabytes
+- fileCount: Number of files
+- exceeded: Boolean indicating if limit is reached
+- percentUsed: Usage as a percentage (0-100)`,
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Storage usage retrieved successfully',
+  })
+  async getStorageUsage(@CurrentUser() authUser: AuthenticatedUser) {
+    return this.usersService.getStorageUsage(authUser.userId);
   }
 }

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -26,6 +27,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { ListFilesQueryDto } from './dto/list-files-query.dto';
+import { UpdateFileDto } from './dto/update-file.dto';
 import {
   GetFileResponseDto,
   ListFilesResponseDto,
@@ -39,31 +41,6 @@ import { ErrorResponseDto } from '../../common/dto';
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
-  /**
-   * Get storage usage for the authenticated user.
-   * Returns current usage, limit, and whether storage is exceeded.
-   */
-  @Get('storage-usage')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Get storage usage',
-    description: `Returns the current storage usage for the authenticated user.
-
-**Response includes:**
-- usedBytes: Total bytes currently used
-- usedGb: Usage in gigabytes (rounded to 2 decimals)
-- limitBytes: Maximum allowed storage in bytes
-- limitGb: Maximum allowed storage in gigabytes
-- exceeded: Boolean indicating if limit is reached
-- percentUsed: Usage as a percentage (0-100)`,
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Storage usage retrieved successfully',
-  })
-  async getStorageUsage(@CurrentUser() authUser: AuthenticatedUser) {
-    return this.filesService.getStorageUsage(authUser.userId);
-  }
 
   /**
    * Check if a file with the given content hash already exists.
@@ -208,59 +185,6 @@ Include thumbSmall, thumbMedium, cipherThumbSmallKey, cipherThumbMediumKey, blur
     }
   }
 
-  /**
-   * @deprecated Use POST /files/upload with thumbnail parameters instead.
-   * This endpoint is kept for backward compatibility.
-   */
-  @Post('upload-with-thumbnails')
-  @HttpCode(HttpStatus.CREATED)
-  @UseInterceptors(FileInterceptor('file'))
-  @ApiOperation({
-    summary: '[DEPRECATED] Upload file with thumbnails',
-    description: `**DEPRECATED**: Use POST /files/upload with thumbnail parameters instead.
-    
-This endpoint is kept for backward compatibility only.`,
-  })
-  @ApiResponse({
-    status: HttpStatus.CREATED,
-    description: 'File and thumbnails uploaded successfully',
-  })
-  async uploadFileWithThumbnails(
-    @CurrentUser() authUser: AuthenticatedUser,
-    @UploadedFile() file: any,
-    @Body('fileNameEncrypted') fileNameEncrypted: string,
-    @Body('cipherFileKey') cipherFileKey: string,
-    @Body('cipherThumbSmallKey') cipherThumbSmallKey: string,
-    @Body('cipherThumbMediumKey') cipherThumbMediumKey: string,
-    @Body('thumbSmall') thumbSmallBase64: string,
-    @Body('thumbMedium') thumbMediumBase64: string,
-    @Body('mimeType') mimeType: string,
-    @Body('sha1Hash') sha1Hash: string,
-    @Body('blurhash') blurhash: string,
-    @Body('width') width: string,
-    @Body('height') height: string,
-    @Body('duration') duration: string,
-    @Body('contentHash') contentHash?: string,
-  ) {
-    // Delegate to unified upload endpoint
-    return this.uploadFile(
-      authUser,
-      file,
-      fileNameEncrypted,
-      cipherFileKey,
-      mimeType,
-      sha1Hash,
-      contentHash,
-      cipherThumbSmallKey,
-      cipherThumbMediumKey,
-      thumbSmallBase64,
-      thumbMediumBase64,
-      blurhash,
-      width,
-      height,
-      duration,
-    );
-  }
 
   /**
    * Get multiple files metadata in batch.
@@ -343,13 +267,13 @@ Backend never decrypts file data.`,
   }
 
   /**
-   * List user's files with pagination.
+   * List user's files with pagination and optional filters.
    */
   @Get()
   @ApiOperation({
     summary: 'List files',
     description:
-      'Returns paginated list of user files with encrypted metadata (no download URLs for efficiency)',
+      'Returns paginated list of user files with encrypted metadata. Use ?favorite=true to list only favorites.',
   })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -363,7 +287,44 @@ Backend never decrypts file data.`,
     return this.filesService.listFiles(authUser.userId, {
       page: query.page,
       limit: query.limit,
+      favorite: query.favorite,
     });
+  }
+
+  /**
+   * Update file properties (e.g., favorite status).
+   */
+  @Patch(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Update file',
+    description: 'Update file properties such as favorite status.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'File UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'File updated',
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: 'File not found',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: 'Access denied',
+    type: ErrorResponseDto,
+  })
+  async updateFile(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) fileId: string,
+    @Body() dto: UpdateFileDto,
+  ) {
+    return this.filesService.updateFile(fileId, authUser.userId, dto);
   }
 
   /**
@@ -404,51 +365,4 @@ Backend never decrypts file data.`,
     return this.filesService.deleteFile(fileId, authUser.userId);
   }
 
-  /**
-   * Toggle favorite status for a file.
-   */
-  @Post(':id/favorite')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Toggle favorite',
-    description: 'Toggles the favorite status of a file.',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'File UUID',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Favorite status toggled',
-  })
-  async toggleFavorite(
-    @CurrentUser() authUser: AuthenticatedUser,
-    @Param('id', ParseUUIDPipe) fileId: string,
-  ) {
-    return this.filesService.toggleFavorite(fileId, authUser.userId);
-  }
-
-  /**
-   * List favorite files.
-   */
-  @Get('favorites/list')
-  @ApiOperation({
-    summary: 'List favorites',
-    description: 'Returns paginated list of favorite files.',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Paginated list of favorite files',
-    type: ListFilesResponseDto,
-  })
-  async listFavorites(
-    @CurrentUser() authUser: AuthenticatedUser,
-    @Query() query: ListFilesQueryDto,
-  ): Promise<ListFilesResponseDto> {
-    return this.filesService.listFavorites(authUser.userId, {
-      page: query.page,
-      limit: query.limit,
-    });
-  }
 }

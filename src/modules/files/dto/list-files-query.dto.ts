@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsInt, Min, Max } from 'class-validator';
+import { IsOptional, IsInt, Min, Max, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
@@ -31,4 +31,14 @@ export class ListFilesQueryDto {
   @Min(1)
   @Max(100)
   limit?: number = 50;
+
+  @ApiPropertyOptional({
+    description: 'Filter by favorite status',
+    example: true,
+    type: Boolean,
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  favorite?: boolean;
 }

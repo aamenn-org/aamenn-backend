@@ -328,48 +328,6 @@ export class AdminService {
     };
   }
 
-  /**
-   * Get top users by storage usage
-   */
-  async getTopUsersByStorage(limit: number = 10): Promise<UserWithStats[]> {
-    const rawResults = await this.usersRepository
-      .createQueryBuilder('user')
-      .leftJoin('user.files', 'file', 'file.deletedAt IS NULL')
-      .select([
-        'user.id',
-        'user.email',
-        'user.displayName',
-        'user.role',
-        'user.isActive',
-        'user.createdAt',
-        'user.lastLoginAt',
-      ])
-      .addSelect('COUNT(file.id)', 'fileCount')
-      .addSelect('COALESCE(SUM(file.sizeBytes), 0)', 'storageBytes')
-      .where('user.role = :role', { role: UserRole.USER })
-      .groupBy('user.id')
-      .addGroupBy('user.email')
-      .addGroupBy('user.displayName')
-      .addGroupBy('user.role')
-      .addGroupBy('user.isActive')
-      .addGroupBy('user.createdAt')
-      .addGroupBy('user.lastLoginAt')
-      .orderBy('"storageBytes"', 'DESC')
-      .limit(limit)
-      .getRawMany();
-
-    return rawResults.map((row) => ({
-      id: row.user_id,
-      email: row.user_email,
-      displayName: row.user_display_name,
-      role: row.user_role,
-      isActive: row.user_is_active,
-      createdAt: row.user_created_at,
-      lastLoginAt: row.user_last_login_at,
-      fileCount: parseInt(row.fileCount || '0', 10),
-      storageBytes: parseInt(row.storageBytes || '0', 10),
-    }));
-  }
 
   /**
    * Update user status (enable/disable)

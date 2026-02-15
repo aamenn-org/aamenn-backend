@@ -441,13 +441,18 @@ export class FilesService {
    */
   async listFiles(
     userId: string,
-    options: { page?: number; limit?: number } = {},
+    options: { page?: number; limit?: number; favorite?: boolean } = {},
   ) {
-    const { page = 1, limit = 50 } = options;
+    const { page = 1, limit = 50, favorite } = options;
     const skip = (page - 1) * limit;
 
+    const whereClause: any = { userId, deletedAt: IsNull() };
+    if (favorite !== undefined) {
+      whereClause.isFavorite = favorite;
+    }
+
     const [files, total] = await this.filesRepository.findAndCount({
-      where: { userId, deletedAt: IsNull() },
+      where: whereClause,
       order: { createdAt: 'DESC' },
       skip,
       take: limit,
@@ -566,83 +571,28 @@ export class FilesService {
   }
 
   /**
-   * Toggle favorite status for a file.
+   * Update file properties (e.g., favorite status).
    */
-  async toggleFavorite(fileId: string, userId: string) {
+  async updateFile(
+    fileId: string,
+    userId: string,
+    updates: { isFavorite?: boolean },
+  ) {
     const file = await this.verifyFileOwnership(fileId, userId);
-    file.isFavorite = !file.isFavorite;
+
+    if (updates.isFavorite !== undefined) {
+      file.isFavorite = updates.isFavorite;
+    }
+
     await this.filesRepository.save(file);
 
     return {
       fileId: file.id,
       isFavorite: file.isFavorite,
+      updatedAt: file.updatedAt,
     };
   }
 
-  /**
-   * List favorite files for a user.
-   */
-  async listFavorites(
-    userId: string,
-    options: { page?: number; limit?: number } = {},
-  ) {
-    const { page = 1, limit = 50 } = options;
-    const skip = (page - 1) * limit;
-
-    const [files, total] = await this.filesRepository.findAndCount({
-      where: { userId, isFavorite: true, deletedAt: IsNull() },
-      order: { createdAt: 'DESC' },
-      skip,
-      take: limit,
-    });
-
-    // Get signed URLs for small thumbnails in parallel
-    const filesWithUrls = await Promise.all(
-      files.map(async (file) => {
-        let thumbSmallUrl: string | null = null;
-
-        if (file.b2ThumbSmallPath) {
-          try {
-            const result = await this.b2StorageService.getSignedDownloadUrl(
-              file.b2ThumbSmallPath,
-            );
-            thumbSmallUrl = result.downloadUrl;
-          } catch (error) {
-            this.logger.warn(
-              `Failed to get thumbnail URL for file ${file.id}:`,
-              error,
-            );
-          }
-        }
-
-        return {
-          fileId: file.id,
-          fileNameEncrypted: file.fileNameEncrypted,
-          mimeType: file.mimeType,
-          sizeBytes: file.sizeBytes,
-          blurhash: file.blurhash,
-          width: file.width,
-          height: file.height,
-          duration: file.duration,
-          isFavorite: file.isFavorite,
-          cipherThumbSmallKey: file.cipherThumbSmallKey,
-          thumbSmallUrl,
-          createdAt: file.createdAt,
-          updatedAt: file.updatedAt,
-        };
-      }),
-    );
-
-    return {
-      files: filesWithUrls,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
-  }
 
   /**
    * Delete a file permanently from B2 storage and database.
