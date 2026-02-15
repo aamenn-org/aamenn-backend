@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
 import { User } from '../../database/entities/user.entity';
 import { UserSecurity } from '../../database/entities/user-security.entity';
 import { File } from '../../database/entities/file.entity';
@@ -10,6 +9,7 @@ import { AlbumFile } from '../../database/entities/album-file.entity';
 import { CreateUserSecurityDto } from './dto/create-user-security.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { B2StorageService } from '../storage/b2-storage.service';
+import { FilesService } from '../files/files.service';
 
 /**
  * Options for finding a user - exactly one must be provided
@@ -36,7 +36,7 @@ export class UsersService {
     @InjectRepository(AlbumFile)
     private albumFilesRepository: Repository<AlbumFile>,
     private b2StorageService: B2StorageService,
-    private configService: ConfigService,
+    private filesService: FilesService,
   ) {}
 
   /**
@@ -103,6 +103,13 @@ export class UsersService {
     });
 
     return result;
+  }
+
+  /**
+   * Get storage usage for a user (delegates to FilesService).
+   */
+  async getStorageUsage(userId: string) {
+    return this.filesService.getStorageUsage(userId);
   }
 
   /**
@@ -240,36 +247,5 @@ export class UsersService {
     await this.usersRepository.delete({ id: userId });
 
     this.logger.log(`Account deleted for user: ${userId}`);
-  }
-
-  /**
-   * Get storage usage for a user.
-   * Returns current usage, limit, and whether exceeded.
-   */
-  async getStorageUsage(userId: string) {
-    // Get total bytes used and file count (excluding soft-deleted files)
-    const result = await this.filesRepository
-      .createQueryBuilder('file')
-      .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
-      .addSelect('COUNT(file.id)', 'fileCount')
-      .where('file.userId = :userId', { userId })
-      .andWhere('file.deletedAt IS NULL')
-      .getRawOne();
-
-    const usedBytes = parseInt(result.totalBytes, 10) || 0;
-    const fileCount = parseInt(result.fileCount, 10) || 0;
-    const limitGb = this.configService.get<number>('storage.limitGb', 1);
-    const limitBytes = limitGb * 1024 * 1024 * 1024;
-    const usedGb = usedBytes / (1024 * 1024 * 1024);
-
-    return {
-      usedBytes,
-      usedGb: Math.round(usedGb * 100) / 100,
-      limitBytes,
-      limitGb,
-      fileCount,
-      exceeded: usedBytes >= limitBytes,
-      percentUsed: Math.min(Math.round((usedBytes / limitBytes) * 100), 100),
-    };
   }
 }

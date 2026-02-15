@@ -7,11 +7,13 @@ import { Album } from '../../database/entities/album.entity';
 import { AlbumFile } from '../../database/entities/album-file.entity';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
+import { FilesModule } from '../files/files.module';
 import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, UserSecurity, File, Album, AlbumFile]),
+    FilesModule,
     forwardRef(() => StorageModule),
   ],
   controllers: [UsersController],
