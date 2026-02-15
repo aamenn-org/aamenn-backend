@@ -17,9 +17,12 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -e
             cd /var/www/aamenn-backend
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
             docker compose down
-            docker compose build
+            docker compose build --no-cache
             docker compose up -d
             docker compose logs --tail=50
+            echo "Deployed commit: $(git rev-parse --short HEAD)"
