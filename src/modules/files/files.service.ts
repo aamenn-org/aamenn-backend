@@ -248,6 +248,24 @@ export class FilesService {
 
     await this.filesRepository.save(file);
 
+    // Generate signed URLs for thumbnails so frontend can display them immediately
+    let thumbSmallUrl: string | null = null;
+    let thumbMediumUrl: string | null = null;
+    let thumbLargeUrl: string | null = null;
+
+    if (thumbnailData && thumbSmallPath && thumbMediumPath && thumbLargePath) {
+      const [thumbSmallResult, thumbMediumResult, thumbLargeResult] =
+        await Promise.all([
+          this.b2StorageService.getSignedDownloadUrl(thumbSmallPath),
+          this.b2StorageService.getSignedDownloadUrl(thumbMediumPath),
+          this.b2StorageService.getSignedDownloadUrl(thumbLargePath),
+        ]);
+
+      thumbSmallUrl = thumbSmallResult.downloadUrl;
+      thumbMediumUrl = thumbMediumResult.downloadUrl;
+      thumbLargeUrl = thumbLargeResult.downloadUrl;
+    }
+
     return {
       fileId: file.id,
       b2FilePath: file.b2FilePath,
@@ -260,6 +278,12 @@ export class FilesService {
       height: file.height,
       duration: file.duration,
       hasThumbnails: !!thumbnailData,
+      cipherThumbSmallKey: file.cipherThumbSmallKey,
+      cipherThumbMediumKey: file.cipherThumbMediumKey,
+      cipherThumbLargeKey: file.cipherThumbLargeKey,
+      thumbSmallUrl,
+      thumbMediumUrl,
+      thumbLargeUrl,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     };
