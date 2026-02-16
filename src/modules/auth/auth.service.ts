@@ -54,6 +54,7 @@ export class AuthService {
       dto.email,
       hashedPassword,
       AUTH_PROVIDER.LOCAL,
+      dto.displayName,
     );
 
     // Store encrypted master key and KDF params

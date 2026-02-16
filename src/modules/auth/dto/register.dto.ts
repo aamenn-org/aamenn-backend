@@ -108,4 +108,12 @@ export class RegisterDto {
   @ValidateNested()
   @Type(() => KdfParamsDto)
   kdfParams: KdfParamsDto;
+
+  @ApiPropertyOptional({
+    description: 'User display name (optional)',
+    example: 'John Doe',
+  })
+  @IsOptional()
+  @IsString()
+  displayName?: string;
 }

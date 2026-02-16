@@ -68,6 +68,7 @@ export class UsersService {
     email?: string,
     passwordHash?: string,
     authProvider?: string,
+    displayName?: string,
   ): Promise<User> {
     let user = await this.findUser({ authProviderId });
 
@@ -82,6 +83,7 @@ export class UsersService {
         email: email || `${authProviderId}@unknown.auth`,
         passwordHash,
         authProvider,
+        displayName,
       });
       await this.usersRepository.save(user);
     } else if (email && user.email !== email) {
