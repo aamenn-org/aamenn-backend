@@ -24,7 +24,8 @@
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
     "seed:admin": "ts-node -r tsconfig-paths/register src/database/seeds/seed-admin.ts",
     "clear:data": "ts-node -r tsconfig-paths/register scripts/clear-database.ts",
-    "migrate:b2:bucket": "ts-node -r tsconfig-paths/register scripts/migrate-b2-bucket.ts"
+    "migrate:b2:bucket": "ts-node -r tsconfig-paths/register scripts/migrate-b2-bucket.ts",
+    "deduplicate:b2": "ts-node -r tsconfig-paths/register scripts/deduplicate-b2-bucket.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",

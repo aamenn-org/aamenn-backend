@@ -3,6 +3,13 @@ import { config } from 'dotenv';
 import B2 = require('backblaze-b2');
 import * as fs from 'fs/promises';
 
+// Import ALL entities to satisfy TypeORM relationship dependencies
+import { File } from '../src/database/entities/file.entity';
+import { User } from '../src/database/entities/user.entity';
+import { Album } from '../src/database/entities/album.entity';
+import { AlbumFile } from '../src/database/entities/album-file.entity';
+import { UserSecurity } from '../src/database/entities/user-security.entity';
+
 config();
 
 interface MigrationConfig {
@@ -24,6 +31,7 @@ interface ProgressStats {
   total: number;
   copied: number;
   failed: number;
+  skipped: number;
   currentKey: string;
   startTime: number;
   copiesPerSecond: number;
@@ -34,6 +42,8 @@ class B2BucketMigration {
   private destB2: InstanceType<typeof B2>;
   private destApiUrl: string;
   private destAuthToken: string;
+  private sourceDownloadUrl: string;
+  private sourceAuthToken: string;
   private dataSource: DataSource;
   private state: MigrationState;
   private stateFile: string;
@@ -57,7 +67,7 @@ class B2BucketMigration {
     this.stateFile = options.stateFile || '.b2-migration-state.json';
     this.concurrency = options.concurrency || 5;
     this.batchSize = options.batchSize || 200;
-    this.maxErrors = options.maxErrors || 100;
+    this.maxErrors = options.maxErrors || 500;
     this.dryRun = options.dryRun || false;
     this.mode = options.mode || 'copy';
   }
@@ -71,7 +81,9 @@ class B2BucketMigration {
       applicationKeyId: process.env.B2_APPLICATION_KEY_ID!,
       applicationKey: process.env.B2_APPLICATION_KEY!,
     });
-    await this.sourceB2.authorize();
+    const sourceAuth = await this.sourceB2.authorize();
+    this.sourceDownloadUrl = sourceAuth.data.downloadUrl;
+    this.sourceAuthToken = sourceAuth.data.authorizationToken;
     console.log(`✅ Source bucket: ${process.env.B2_BUCKET_NAME}\n`);
 
     // Initialize destination B2
@@ -94,7 +106,7 @@ class B2BucketMigration {
       username: process.env.DATABASE_USERNAME || 'postgres',
       password: process.env.DATABASE_PASSWORD,
       database: process.env.DATABASE_NAME || 'aamenn_vault',
-      entities: ['dist/database/entities/*.entity.js'],
+      entities: [File, User, Album, AlbumFile, UserSecurity],
       synchronize: false,
     });
     await this.dataSource.initialize();
@@ -129,23 +141,24 @@ class B2BucketMigration {
   private async getAllObjectKeys(): Promise<string[]> {
     console.log('📋 Collecting object keys from database...');
 
-    const files = await this.dataSource.query(`
-      SELECT 
-        b2_file_path,
-        b2_thumb_small_path,
-        b2_thumb_medium_path,
-        b2_thumb_large_path
-      FROM file
-      WHERE deleted_at IS NULL
-    `);
+    const fileRepository = this.dataSource.getRepository(File);
+    const files = await fileRepository.find({
+      where: { deletedAt: null as any },
+      select: [
+        'b2FilePath',
+        'b2ThumbSmallPath', 
+        'b2ThumbMediumPath',
+        'b2ThumbLargePath'
+      ]
+    });
 
     const allKeys = new Set<string>();
 
     for (const file of files) {
-      if (file.b2_file_path) allKeys.add(file.b2_file_path);
-      if (file.b2_thumb_small_path) allKeys.add(file.b2_thumb_small_path);
-      if (file.b2_thumb_medium_path) allKeys.add(file.b2_thumb_medium_path);
-      if (file.b2_thumb_large_path) allKeys.add(file.b2_thumb_large_path);
+      if (file.b2FilePath) allKeys.add(file.b2FilePath);
+      if (file.b2ThumbSmallPath) allKeys.add(file.b2ThumbSmallPath);
+      if (file.b2ThumbMediumPath) allKeys.add(file.b2ThumbMediumPath);
+      if (file.b2ThumbLargePath) allKeys.add(file.b2ThumbLargePath);
     }
 
     const keys = Array.from(allKeys);
@@ -153,7 +166,7 @@ class B2BucketMigration {
     return keys;
   }
 
-  private async copyObject(objectKey: string): Promise<void> {
+  private async copyObject(objectKey: string, stats: ProgressStats): Promise<void> {
     if (this.dryRun) {
       console.log(`[DRY RUN] Would copy: ${objectKey}`);
       return;
@@ -169,30 +182,47 @@ class B2BucketMigration {
     } as any);
 
     if (listResponse.data.files.length === 0) {
-      throw new Error(`Object not found in source bucket: ${objectKey}`);
+      // Skip missing files (common for thumbnails that don't exist)
+      stats.skipped++;
+      console.log(`⚠️  Skipping missing file: ${objectKey}`);
+      return; // Don't count as error, just skip
     }
 
     const sourceFile = listResponse.data.files[0];
 
-    // Use B2 API directly for copy_file (backblaze-b2 package doesn't have copyFile method)
-    const copyUrl = `${this.destApiUrl}/b2api/v2/b2_copy_file`;
-    const response = await fetch(copyUrl, {
+    // Since we're copying between different accounts, we need to download + upload
+    // B2 copy_file API only works within the same account
+    
+    // Step 1: Download from source bucket
+    const downloadUrl = `${this.sourceDownloadUrl}/file/${process.env.B2_BUCKET_NAME}/${objectKey}?Authorization=${this.sourceAuthToken}`;
+    const downloadResponse = await fetch(downloadUrl);
+    
+    if (!downloadResponse.ok) {
+      throw new Error(`Failed to download from source: ${downloadResponse.statusText}`);
+    }
+    
+    const fileBuffer = Buffer.from(await downloadResponse.arrayBuffer());
+    
+    // Step 2: Upload to destination bucket
+    const uploadResponse = await this.destB2.getUploadUrl({
+      bucketId: this.config.newBucketId,
+    });
+    
+    const uploadResult = await fetch(uploadResponse.data.uploadUrl, {
       method: 'POST',
       headers: {
-        'Authorization': this.destAuthToken,
-        'Content-Type': 'application/json',
+        Authorization: uploadResponse.data.authorizationToken,
+        'Content-Type': 'application/octet-stream',
+        'X-Bz-File-Name': encodeURIComponent(objectKey),
+        'X-Bz-Content-Sha1': require('crypto').createHash('sha1').update(fileBuffer).digest('hex'),
+        'Content-Length': fileBuffer.length.toString(),
       },
-      body: JSON.stringify({
-        sourceFileId: sourceFile.fileId,
-        destinationBucketId: this.config.newBucketId,
-        fileName: objectKey,
-        metadataDirective: 'COPY',
-      }),
+      body: fileBuffer,
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`B2 copy failed: ${errorText}`);
+    
+    if (!uploadResult.ok) {
+      const errorText = await uploadResult.text();
+      throw new Error(`Failed to upload to destination: ${errorText}`);
     }
   }
 
@@ -215,8 +245,8 @@ class B2BucketMigration {
 
   private formatProgress(stats: ProgressStats): string {
     const elapsed = (Date.now() - stats.startTime) / 1000;
-    const percentage = ((stats.copied + stats.failed) / stats.total * 100).toFixed(2);
-    const remaining = stats.total - stats.copied - stats.failed;
+    const percentage = ((stats.copied + stats.failed + stats.skipped) / stats.total * 100).toFixed(2);
+    const remaining = stats.total - stats.copied - stats.failed - stats.skipped;
     const eta = remaining > 0 && stats.copiesPerSecond > 0
       ? Math.ceil(remaining / stats.copiesPerSecond)
       : 0;
@@ -225,9 +255,10 @@ class B2BucketMigration {
 
     return [
       `\n${'='.repeat(60)}`,
-      `Progress: ${stats.copied + stats.failed}/${stats.total} (${percentage}%)`,
+      `Progress: ${stats.copied + stats.failed + stats.skipped}/${stats.total} (${percentage}%)`,
       `✅ Copied: ${stats.copied}`,
       `❌ Failed: ${stats.failed}`,
+      `⏭️  Skipped: ${stats.skipped}`,
       `⏱️  Speed: ${stats.copiesPerSecond.toFixed(2)} objects/sec`,
       `⏳ ETA: ${etaStr}`,
       `📄 Current: ${stats.currentKey.substring(0, 50)}...`,
@@ -257,6 +288,7 @@ class B2BucketMigration {
       total: allKeys.length,
       copied: this.state.copiedKeys.length,
       failed: this.state.failedKeys.length,
+      skipped: 0,
       currentKey: '',
       startTime: Date.now(),
       copiesPerSecond: 0,
@@ -278,7 +310,7 @@ class B2BucketMigration {
 
           try {
             if (this.mode === 'copy') {
-              await this.copyObject(key);
+              await this.copyObject(key, stats);
             } else {
               const exists = await this.verifyObject(key);
               if (!exists) {
@@ -293,13 +325,23 @@ class B2BucketMigration {
             const elapsed = (Date.now() - stats.startTime) / 1000;
             stats.copiesPerSecond = stats.copied / elapsed;
           } catch (error: any) {
+            const errorMsg = error.message || 'Unknown error';
             this.state.failedKeys.push({
               key,
-              error: error.message || 'Unknown error',
+              error: errorMsg,
             });
             stats.failed++;
 
+            // Log first few errors for debugging
+            if (this.state.failedKeys.length <= 5) {
+              console.log(`❌ Error for ${key}: ${errorMsg}`);
+            }
+
             if (this.state.failedKeys.length >= this.maxErrors) {
+              console.log('\n🔍 Last few errors:');
+              this.state.failedKeys.slice(-5).forEach(({ key, error }) => {
+                console.log(`  - ${key}: ${error}`);
+              });
               throw new Error(`Max errors (${this.maxErrors}) reached. Stopping migration.`);
             }
           }
