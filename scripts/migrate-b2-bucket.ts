@@ -94,7 +94,7 @@ class B2BucketMigration {
       username: process.env.DATABASE_USERNAME || 'postgres',
       password: process.env.DATABASE_PASSWORD,
       database: process.env.DATABASE_NAME || 'aamenn_vault',
-      entities: ['src/database/entities/*.entity.ts'],
+      entities: ['dist/database/entities/*.entity.js'],
       synchronize: false,
     });
     await this.dataSource.initialize();
