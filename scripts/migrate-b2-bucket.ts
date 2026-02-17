@@ -164,7 +164,9 @@ class B2BucketMigration {
       bucketId: process.env.B2_BUCKET_ID!,
       prefix: objectKey,
       maxFileCount: 1,
-    });
+      startFileName: objectKey,
+      delimiter: '',
+    } as any);
 
     if (listResponse.data.files.length === 0) {
       throw new Error(`Object not found in source bucket: ${objectKey}`);
@@ -200,7 +202,9 @@ class B2BucketMigration {
         bucketId: this.config.newBucketId,
         prefix: objectKey,
         maxFileCount: 1,
-      });
+        startFileName: objectKey,
+        delimiter: '',
+      } as any);
 
       return listResponse.data.files.length > 0 && 
              listResponse.data.files[0].fileName === objectKey;
