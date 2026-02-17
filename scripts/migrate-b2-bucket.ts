@@ -2,7 +2,6 @@ import { DataSource } from 'typeorm';
 import { config } from 'dotenv';
 import B2 = require('backblaze-b2');
 import * as fs from 'fs/promises';
-import * as path from 'path';
 
 config();
 
@@ -33,6 +32,8 @@ interface ProgressStats {
 class B2BucketMigration {
   private sourceB2: InstanceType<typeof B2>;
   private destB2: InstanceType<typeof B2>;
+  private destApiUrl: string;
+  private destAuthToken: string;
   private dataSource: DataSource;
   private state: MigrationState;
   private stateFile: string;
@@ -79,7 +80,9 @@ class B2BucketMigration {
       applicationKeyId: this.config.newApplicationKeyId,
       applicationKey: this.config.newApplicationKey,
     });
-    await this.destB2.authorize();
+    const destAuth = await this.destB2.authorize();
+    this.destApiUrl = destAuth.data.apiUrl;
+    this.destAuthToken = destAuth.data.authorizationToken;
     console.log(`✅ Destination bucket: ${this.config.newBucketName}\n`);
 
     // Initialize database
@@ -169,12 +172,26 @@ class B2BucketMigration {
 
     const sourceFile = listResponse.data.files[0];
 
-    // Use B2 server-side copy
-    await this.destB2.copyFile({
-      sourceFileId: sourceFile.fileId,
-      destinationBucketId: this.config.newBucketId,
-      fileName: objectKey, // Keep same path
+    // Use B2 API directly for copy_file (backblaze-b2 package doesn't have copyFile method)
+    const copyUrl = `${this.destApiUrl}/b2api/v2/b2_copy_file`;
+    const response = await fetch(copyUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': this.destAuthToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sourceFileId: sourceFile.fileId,
+        destinationBucketId: this.config.newBucketId,
+        fileName: objectKey,
+        metadataDirective: 'COPY',
+      }),
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`B2 copy failed: ${errorText}`);
+    }
   }
 
   private async verifyObject(objectKey: string): Promise<boolean> {
