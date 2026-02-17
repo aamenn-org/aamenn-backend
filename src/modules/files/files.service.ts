@@ -14,8 +14,11 @@ import {
   DownloadType,
 } from '../../database/entities/download-log.entity';
 import { B2StorageService } from '../storage/b2-storage.service';
-import { ThumbnailService } from './thumbnail.service';
+import { CacheService } from '../cache/cache.service';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
+
+// Import p-limit for concurrency control
+import pLimit from 'p-limit';
 
 interface ThumbnailData {
   cipherThumbSmallKey: string;
@@ -33,6 +36,12 @@ interface ThumbnailData {
 @Injectable()
 export class FilesService {
   private readonly logger = new Logger(FilesService.name);
+  
+  // PERFORMANCE: Limit concurrent B2 uploads to prevent overwhelming the service
+  // Max 5 concurrent uploads to B2 (configurable via env)
+  private readonly uploadLimit = pLimit(
+    parseInt(process.env.B2_UPLOAD_CONCURRENCY || '5', 10)
+  );
 
   constructor(
     @InjectRepository(File)
@@ -42,9 +51,13 @@ export class FilesService {
     @InjectRepository(DownloadLog)
     private downloadLogsRepository: Repository<DownloadLog>,
     private b2StorageService: B2StorageService,
-    private thumbnailService: ThumbnailService,
     private configService: ConfigService,
-  ) {}
+    private cacheService: CacheService,
+  ) {
+    // CRITICAL: ThumbnailService removed - backend NEVER processes plaintext images
+    // All thumbnails must be generated and encrypted client-side
+    this.logger.log(`B2 upload concurrency limit: ${this.uploadLimit.concurrency}`);
+  }
 
   /**
    * Check if a file with the given content hash already exists for this user.
@@ -189,30 +202,30 @@ export class FilesService {
         ])
       : [null, null, null];
 
-    // Upload ALL files to B2 in parallel (main file + both thumbnails)
-    // This significantly reduces total upload time vs sequential uploads
+    // Upload ALL files to B2 with concurrency control
+    // Use p-limit to prevent overwhelming B2 API with too many concurrent uploads
     const uploadPromises: Promise<void>[] = [
-      this.b2StorageService.uploadFile(b2FilePath, fileBuffer, sha1Hash),
+      this.uploadLimit(() => this.b2StorageService.uploadFile(b2FilePath, fileBuffer, sha1Hash)),
     ];
 
     if (thumbnailData && thumbSmallPath && thumbMediumPath && thumbLargePath) {
-      this.logger.debug('Uploading main file and thumbnails in parallel...');
+      this.logger.debug('Uploading main file and thumbnails with concurrency control...');
       uploadPromises.push(
-        this.b2StorageService.uploadFile(
+        this.uploadLimit(() => this.b2StorageService.uploadFile(
           thumbSmallPath,
           thumbnailData.thumbSmallBuffer,
           thumbSmallHash!,
-        ),
-        this.b2StorageService.uploadFile(
+        )),
+        this.uploadLimit(() => this.b2StorageService.uploadFile(
           thumbMediumPath,
           thumbnailData.thumbMediumBuffer,
           thumbMediumHash!,
-        ),
-        this.b2StorageService.uploadFile(
+        )),
+        this.uploadLimit(() => this.b2StorageService.uploadFile(
           thumbLargePath,
           thumbnailData.thumbLargeBuffer,
           thumbLargeHash!,
-        ),
+        )),
       );
     }
 
@@ -247,6 +260,8 @@ export class FilesService {
     }
 
     await this.filesRepository.save(file);
+
+    await this.cacheService.incrementVersion(userId, 'files');
 
     // Generate signed URLs for thumbnails so frontend can display them immediately
     let thumbSmallUrl: string | null = null;
@@ -503,6 +518,32 @@ export class FilesService {
     const { page = 1, limit = 50, favorite } = options;
     const skip = (page - 1) * limit;
 
+    // Try cache for pagination snapshot (IDs only)
+    const filesVer = await this.cacheService.getVersion(userId, 'files');
+    const cacheKey = `list:fav:${favorite || 0}:page:${page}:limit:${limit}:fv:${filesVer}`;
+    
+    const cachedSnapshot = await this.cacheService.get<{fileIds: string[], total: number}>(userId, 'files', cacheKey);
+    if (cachedSnapshot) {
+      // Fetch full file data by IDs (still need to generate signed URLs)
+      const files = await this.filesRepository.find({
+        where: { id: In(cachedSnapshot.fileIds), userId, deletedAt: IsNull() },
+        order: { createdAt: 'DESC' },
+      });
+      
+      const filesWithUrls = await this.generateFilesWithUrls(files);
+      
+      return {
+        files: filesWithUrls,
+        pagination: {
+          page,
+          limit,
+          total: cachedSnapshot.total,
+          totalPages: Math.ceil(cachedSnapshot.total / limit),
+        },
+      };
+    }
+
+    // Cache miss - query database
     const whereClause: any = { userId, deletedAt: IsNull() };
     if (favorite !== undefined) {
       whereClause.isFavorite = favorite;
@@ -515,8 +556,29 @@ export class FilesService {
       take: limit,
     });
 
+    // Cache pagination snapshot (IDs only, no URLs)
+    const snapshot = {
+      fileIds: files.map(f => f.id),
+      total,
+    };
+    await this.cacheService.set(userId, 'files', cacheKey, snapshot);
+
+    const filesWithUrls = await this.generateFilesWithUrls(files);
+
+    return {
+      files: filesWithUrls,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  private async generateFilesWithUrls(files: File[]) {
     // Get signed URLs for small thumbnails in parallel
-    const filesWithUrls = await Promise.all(
+    return Promise.all(
       files.map(async (file) => {
         let thumbSmallUrl: string | null = null;
 
@@ -552,16 +614,6 @@ export class FilesService {
         };
       }),
     );
-
-    return {
-      files: filesWithUrls,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
   }
 
   /**
@@ -647,6 +699,8 @@ export class FilesService {
 
     await this.filesRepository.save(file);
 
+    await this.cacheService.incrementVersion(userId, 'files');
+
     return {
       fileId: file.id,
       isFavorite: file.isFavorite,
@@ -686,6 +740,9 @@ export class FilesService {
 
     // Permanently delete from database
     await this.filesRepository.remove(file);
+
+    await this.cacheService.incrementVersion(userId, 'files');
+    await this.cacheService.incrementVersion(userId, 'albums');
 
     return { success: true, message: 'File permanently deleted' };
   }

@@ -46,3 +46,15 @@ export const googleConfig = registerAs('google', () => ({
   clientId: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
 }));
+
+export const redisConfig = registerAs('redis', () => ({
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379', 10),
+  password: process.env.REDIS_PASSWORD || undefined,
+  ttl: {
+    albums: parseInt(process.env.CACHE_TTL_ALBUMS || '60', 10),
+    files: parseInt(process.env.CACHE_TTL_FILES || '30', 10),
+    storage: parseInt(process.env.CACHE_TTL_STORAGE || '60', 10),
+    duplicate: parseInt(process.env.CACHE_TTL_DUPLICATE || '900', 10),
+  },
+}));

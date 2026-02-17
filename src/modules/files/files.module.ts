@@ -1,16 +1,25 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
+import { FilesController } from './files.controller';
+import { FilesService } from './files.service';
 import { File } from '../../database/entities/file.entity';
 import { AlbumFile } from '../../database/entities/album-file.entity';
 import { DownloadLog } from '../../database/entities/download-log.entity';
-import { FilesService } from './files.service';
-import { FilesController } from './files.controller';
-import { ThumbnailService } from './thumbnail.service';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([File, AlbumFile, DownloadLog])],
+  imports: [
+    TypeOrmModule.forFeature([File, AlbumFile, DownloadLog]),
+    StorageModule,
+    ConfigModule,
+  ],
   controllers: [FilesController],
-  providers: [FilesService, ThumbnailService],
-  exports: [FilesService, ThumbnailService],
+  providers: [FilesService],
+  exports: [FilesService],
 })
-export class FilesModule {}
+export class FilesModule {
+  // CRITICAL: ThumbnailService removed to ensure true E2EE
+  // Backend NEVER processes plaintext images
+  // All thumbnail generation must happen client-side before encryption
+}

@@ -14,14 +14,12 @@ import {
  */
 export class InitiateUploadDto {
   @ApiProperty({
-    description:
-      'The original filename, encrypted by the client. Backend cannot decrypt this.',
-    example: 'U2FsdGVkX1+abc123...encrypted_filename...',
-    maxLength: 10000,
+    description: 'Encrypted filename (base64)',
+    example: 'base64EncodedEncryptedFilename...',
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(10000)
+  @MaxLength(5000) // Reasonable limit for encrypted filename
   fileNameEncrypted: string;
 
   @ApiPropertyOptional({
@@ -44,13 +42,12 @@ export class InitiateUploadDto {
 
   @ApiProperty({
     description:
-      'The file encryption key, encrypted with the user master key. Backend stores but cannot decrypt.',
-    example: 'U2FsdGVkX1+xyz789...encrypted_key...',
-    maxLength: 10000,
+      'File encryption key encrypted with master key (base64). Format: IV(12 bytes) + ciphertext + authTag(16 bytes)',
+    example: 'base64EncodedEncryptedFileKey...',
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(10000)
+  @MaxLength(1000) // Reasonable limit for encrypted key
   cipherFileKey: string;
 
   @ApiPropertyOptional({

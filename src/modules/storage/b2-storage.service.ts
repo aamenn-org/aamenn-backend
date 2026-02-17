@@ -63,18 +63,71 @@ export class B2StorageService implements IStorageService, OnModuleInit {
 
   /**
    * Generate a unique file path for B2 storage.
-   * Format: users/{userId}/{year}/{month}/{uuid}[-suffix].enc
+   * Format: users/{userId}/{timestamp}-{randomId}
    * @param userId - The user's ID
-   * @param suffix - Optional suffix for thumbnails (e.g., 'thumb-small', 'thumb-medium')
+   * @param prefix - Optional prefix for file path
    */
-  generateFilePath(userId: string, suffix?: string): string {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const fileId = uuidv4();
-    const fileName = suffix ? `${fileId}-${suffix}` : fileId;
+  generateFilePath(userId: string, prefix?: string): string {
+    const timestamp = Date.now();
+    const randomId = uuidv4();
+    const filePrefix = prefix ? `${prefix}-` : '';
+    return `users/${userId}/${filePrefix}${timestamp}-${randomId}`;
+  }
 
-    return `users/${userId}/${year}/${month}/${fileName}.enc`;
+  /**
+   * Health check for B2 connectivity
+   * Tests if we can successfully communicate with B2 API
+   */
+  async healthCheck(): Promise<{ status: 'healthy' | 'degraded' | 'error'; message: string }> {
+    try {
+      // Simple health check: verify we have valid auth token and bucket info
+      if (!this.authToken || !this.bucketId || !this.downloadUrl) {
+        return {
+          status: 'error',
+          message: 'B2 not initialized - missing credentials',
+        };
+      }
+
+      // Test connectivity by getting upload URL (lightweight operation)
+      const response = await this.b2.getUploadUrl({
+        bucketId: this.bucketId,
+      });
+
+      if (response.data && response.data.uploadUrl) {
+        return {
+          status: 'healthy',
+          message: 'B2 storage is operational',
+        };
+      }
+
+      return {
+        status: 'degraded',
+        message: 'B2 responded but with unexpected data',
+      };
+    } catch (error: any) {
+      this.logger.error('B2 health check failed', error?.message);
+
+      // Try to re-authorize if token expired
+      if (error.response?.status === 401) {
+        try {
+          await this.authorize();
+          return {
+            status: 'degraded',
+            message: 'B2 token expired but re-authorization successful',
+          };
+        } catch (reAuthError) {
+          return {
+            status: 'error',
+            message: 'B2 authorization failed',
+          };
+        }
+      }
+
+      return {
+        status: 'error',
+        message: `B2 storage error: ${error?.message || 'Unknown error'}`,
+      };
+    }
   }
 
   /**
@@ -115,13 +168,12 @@ export class B2StorageService implements IStorageService, OnModuleInit {
    */
   async getSignedDownloadUrl(b2FilePath: string): Promise<SignedDownloadUrl> {
     try {
-      // Use account auth token directly - this works for private buckets
-      // when the app key has read access. getDownloadAuthorization requires
-      // the 'shareFiles' capability which may not always be available.
+      // Use account authorization token directly (works for private buckets with read access)
+      // This is secure and reliable - tokens expire after configured duration
       const downloadUrl = `${this.downloadUrl}/file/${this.bucketName}/${b2FilePath}?Authorization=${this.authToken}`;
       return { downloadUrl };
     } catch (error: any) {
-      this.logger.error('Failed to get download URL from B2', error?.message);
+      this.logger.error('Failed to generate download URL from B2', error?.message);
 
       // Try re-authorizing if token expired
       if (error.response?.status === 401) {

@@ -11,6 +11,7 @@ import { Album } from '../../database/entities/album.entity';
 import { AlbumFile } from '../../database/entities/album-file.entity';
 import { FilesService } from '../files/files.service';
 import { B2StorageService } from '../storage/b2-storage.service';
+import { CacheService } from '../cache/cache.service';
 import { CreateAlbumDto } from './dto/create-album.dto';
 import { AddFilesToAlbumDto } from './dto/add-files-to-album.dto';
 
@@ -25,6 +26,7 @@ export class AlbumsService {
     private albumFilesRepository: Repository<AlbumFile>,
     private filesService: FilesService,
     private b2StorageService: B2StorageService,
+    private cacheService: CacheService,
   ) {}
 
   /**
@@ -37,6 +39,8 @@ export class AlbumsService {
     });
 
     await this.albumsRepository.save(album);
+
+    await this.cacheService.incrementVersion(userId, 'albums');
 
     return {
       albumId: album.id,
@@ -80,6 +84,14 @@ export class AlbumsService {
    * List all albums for a user.
    */
   async listAlbums(userId: string) {
+    const albumsVer = await this.cacheService.getVersion(userId, 'albums');
+    const cacheKey = `list:av:${albumsVer}`;
+    
+    const cached = await this.cacheService.get<any>(userId, 'albums', cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const albums = await this.albumsRepository.find({
       where: { userId },
       order: { createdAt: 'DESC' },
@@ -89,7 +101,7 @@ export class AlbumsService {
     const albumIds = albums.map((a) => a.id);
     const fileCounts = await this.getFileCountsForAlbums(albumIds);
 
-    return {
+    const result = {
       albums: albums.map((album) => ({
         albumId: album.id,
         titleEncrypted: album.titleEncrypted,
@@ -97,6 +109,9 @@ export class AlbumsService {
         createdAt: album.createdAt,
       })),
     };
+
+    await this.cacheService.set(userId, 'albums', cacheKey, result);
+    return result;
   }
 
   /**
@@ -147,6 +162,7 @@ export class AlbumsService {
 
     if (albumFiles.length > 0) {
       await this.albumFilesRepository.save(albumFiles);
+      await this.cacheService.incrementVersion(userId, 'albums');
     }
 
     return {
@@ -183,44 +199,44 @@ export class AlbumsService {
       (af) => af.file && !af.file.deletedAt,
     );
 
-    // Get signed URLs for thumbnails in parallel
-    const filesWithUrls = await Promise.all(
-      validAlbumFiles.map(async (af) => {
-        let thumbSmallUrl: string | null = null;
+    // PERFORMANCE: Batch all signed URL requests to avoid N+1 queries
+    // Collect all thumbnail paths first
+    const thumbnailPaths = validAlbumFiles
+      .filter(af => af.file.b2ThumbSmallPath)
+      .map(af => af.file.b2ThumbSmallPath!);
 
-        // Only fetch thumbnail URL if thumbnail exists
-        if (af.file.b2ThumbSmallPath) {
-          try {
-            const result = await this.b2StorageService.getSignedDownloadUrl(
-              af.file.b2ThumbSmallPath,
-            );
-            thumbSmallUrl = result.downloadUrl;
-          } catch (error) {
-            this.logger.warn(
-              `Failed to get thumbnail URL for file ${af.file.id}:`,
-              error,
-            );
-          }
-        }
-
-        return {
-          fileId: af.file.id,
-          fileNameEncrypted: af.file.fileNameEncrypted,
-          mimeType: af.file.mimeType,
-          sizeBytes: af.file.sizeBytes,
-          blurhash: af.file.blurhash,
-          width: af.file.width,
-          height: af.file.height,
-          duration: af.file.duration,
-          isFavorite: af.file.isFavorite,
-          cipherThumbSmallKey: af.file.cipherThumbSmallKey,
-          thumbSmallUrl,
-          orderIndex: af.orderIndex,
-          createdAt: af.file.createdAt,
-          updatedAt: af.file.updatedAt,
-        };
-      }),
+    // Fetch all signed URLs in parallel (single batch)
+    const signedUrlPromises = thumbnailPaths.map(path =>
+      this.b2StorageService.getSignedDownloadUrl(path)
+        .then(result => ({ path, url: result.downloadUrl }))
+        .catch(error => {
+          this.logger.warn(`Failed to get thumbnail URL for ${path}:`, error);
+          return { path, url: null };
+        })
     );
+
+    const signedUrls = await Promise.all(signedUrlPromises);
+    
+    // Create lookup map for O(1) access
+    const urlMap = new Map(signedUrls.map(item => [item.path, item.url]));
+
+    // Map files with their signed URLs
+    const filesWithUrls = validAlbumFiles.map((af) => ({
+      fileId: af.file.id,
+      fileNameEncrypted: af.file.fileNameEncrypted,
+      mimeType: af.file.mimeType,
+      sizeBytes: af.file.sizeBytes,
+      blurhash: af.file.blurhash,
+      width: af.file.width,
+      height: af.file.height,
+      duration: af.file.duration,
+      isFavorite: af.file.isFavorite,
+      cipherThumbSmallKey: af.file.cipherThumbSmallKey,
+      thumbSmallUrl: af.file.b2ThumbSmallPath ? urlMap.get(af.file.b2ThumbSmallPath) || null : null,
+      orderIndex: af.orderIndex,
+      createdAt: af.file.createdAt,
+      updatedAt: af.file.updatedAt,
+    }));
 
     return {
       files: filesWithUrls,
@@ -244,6 +260,8 @@ export class AlbumsService {
 
     // Delete album (cascade will remove album_files entries)
     await this.albumsRepository.remove(album);
+
+    await this.cacheService.incrementVersion(userId, 'albums');
 
     return {
       success: true,

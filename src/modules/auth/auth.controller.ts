@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -15,6 +16,8 @@ import {
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
+import { Throttle } from '@nestjs/throttler';
+import { AuthThrottleGuard } from '../../common/guards/auth-throttle.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from './interfaces/jwt-payload.interface';
 import {
@@ -24,6 +27,7 @@ import {
   AuthResponseDto,
   RegisterResponseDto,
   ChangePasswordDto,
+  LogoutDto,
 } from './dto';
 import { ErrorResponseDto } from '../../common/dto';
 
@@ -38,6 +42,8 @@ export class AuthController {
    */
   @Post('register')
   @Public()
+  @UseGuards(AuthThrottleGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 attempts per minute
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Register new user',
@@ -79,6 +85,8 @@ Server stores the encrypted master key but can NEVER decrypt it.`,
    */
   @Post('login')
   @Public()
+  @UseGuards(AuthThrottleGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 attempts per minute
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'User login',
@@ -114,15 +122,22 @@ Server NEVER sees the plaintext master key.`,
    */
   @Post('refresh')
   @Public()
+  @UseGuards(AuthThrottleGuard)
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 refresh attempts per minute
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Refresh access token',
-    description: 'Get new access token using refresh token',
+    description: `Get a new access token using a valid refresh token.
+    
+**Security Features:**
+- Refresh token rotation: Old token is revoked, new token issued
+- Token reuse detection: If revoked token is reused, all user sessions are terminated
+- Server-side token tracking: All refresh tokens stored as hashes in database`,
   })
   @ApiBody({ type: RefreshTokenDto })
   @ApiResponse({
     status: HttpStatus.OK,
-    description: 'Token refreshed successfully',
+    description: 'New access token generated',
     type: AuthResponseDto,
   })
   @ApiResponse({
@@ -132,5 +147,46 @@ Server NEVER sees the plaintext master key.`,
   })
   async refresh(@Body() dto: RefreshTokenDto): Promise<AuthResponseDto> {
     return this.authService.refresh(dto);
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Logout (revoke refresh token)',
+    description: 'Revoke the provided refresh token to logout from current session',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Successfully logged out',
+  })
+  async logout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: LogoutDto,
+  ) {
+    await this.authService.logout(user.userId, dto.refreshToken);
+    return {
+      success: true,
+      message: 'Successfully logged out',
+    };
+  }
+
+  @Post('logout-all')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Logout from all sessions',
+    description: 'Revoke all refresh tokens for the authenticated user',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Successfully logged out from all sessions',
+  })
+  async logoutAll(@CurrentUser() user: AuthenticatedUser) {
+    await this.authService.logoutAll(user.userId);
+    return {
+      success: true,
+      message: 'Successfully logged out from all sessions',
+    };
   }
 }

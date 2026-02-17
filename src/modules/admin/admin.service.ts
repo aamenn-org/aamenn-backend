@@ -7,6 +7,7 @@ import { File } from '../../database/entities/file.entity';
 import { DownloadLog } from '../../database/entities/download-log.entity';
 import { AdminUsersQueryDto, UserSortBy } from './dto/admin-users-query.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import { B2StorageService } from '../storage/b2-storage.service';
 
 /**
  * Dashboard Overview Statistics
@@ -80,6 +81,8 @@ export interface SystemHealth {
   storageLimit: number;
   storageUsed: number;
   databaseStatus: 'healthy' | 'degraded' | 'error';
+  b2StorageStatus: 'healthy' | 'degraded' | 'error';
+  b2StorageMessage: string;
   activeUsersLast24h: number;
 }
 
@@ -99,6 +102,7 @@ export class AdminService {
     private filesRepository: Repository<File>,
     @InjectRepository(DownloadLog)
     private downloadLogsRepository: Repository<DownloadLog>,
+    private b2StorageService: B2StorageService,
   ) {
     // B2 free tier is 10GB, can be overridden via env
     this.STORAGE_LIMIT_GB = this.configService.get<number>(
@@ -490,12 +494,17 @@ export class AdminService {
       databaseStatus = 'error';
     }
 
+    // B2 storage health check
+    const b2Health = await this.b2StorageService.healthCheck();
+
     return {
       storageUsagePercent,
       storageWarning,
       storageLimit,
       storageUsed,
       databaseStatus,
+      b2StorageStatus: b2Health.status,
+      b2StorageMessage: b2Health.message,
       activeUsersLast24h,
     };
   }
@@ -533,6 +542,20 @@ export class AdminService {
       alerts.push({
         type: 'error',
         message: `Database status: ${health.databaseStatus}`,
+        timestamp: new Date(),
+      });
+    }
+
+    if (health.b2StorageStatus === 'error') {
+      alerts.push({
+        type: 'error',
+        message: `B2 Storage error: ${health.b2StorageMessage}`,
+        timestamp: new Date(),
+      });
+    } else if (health.b2StorageStatus === 'degraded') {
+      alerts.push({
+        type: 'warning',
+        message: `B2 Storage degraded: ${health.b2StorageMessage}`,
         timestamp: new Date(),
       });
     }

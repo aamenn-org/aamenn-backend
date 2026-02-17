@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsObject,
   ValidateNested,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -85,19 +86,21 @@ export class RegisterDto {
 
   @ApiProperty({
     description:
-      'Master key encrypted with KEK, base64 encoded. Format: IV(12 bytes) + ciphertext + authTag',
+      'Master key encrypted with KEK, base64 encoded. Format: IV(12 bytes) + ciphertext + authTag(16 bytes)',
     example: 'base64EncodedEncryptedMasterKey...',
   })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(10000) // Reasonable limit for base64 encrypted master key
   encryptedMasterKey: string;
 
   @ApiProperty({
-    description: 'Salt for KEK derivation, base64 encoded (16 bytes)',
+    description: 'Salt for KEK derivation, base64 encoded (minimum 16 bytes recommended)',
     example: 'base64EncodedSalt...',
   })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(1000) // Reasonable limit for base64 salt
   kekSalt: string;
 
   @ApiProperty({

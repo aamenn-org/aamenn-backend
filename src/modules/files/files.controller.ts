@@ -99,30 +99,48 @@ export class FilesController {
   @UseInterceptors(
     FileInterceptor('file', {
       limits: {
-        fileSize: 500 * 1024 * 1024, // 500MB max file size
-        fieldSize: 50 * 1024 * 1024, // 50MB max field size (for base64 thumbnails)
+        fileSize: 500 * 1024 * 1024, // 500MB max encrypted file size
+        fieldSize: 10 * 1024 * 1024, // 10MB max field size (for base64 encrypted thumbnails)
       },
     }),
   )
   @ApiOperation({
-    summary: 'Upload file (proxy through backend)',
-    description: `Upload encrypted file through backend to avoid CORS issues.
+    summary: 'Upload encrypted file (TRUE E2EE)',
+    description: `Upload encrypted file and encrypted thumbnails.
     
-**Zero-Knowledge Flow:**
-1. Client encrypts file locally
-2. Client optionally generates & encrypts thumbnails
-3. Client uploads encrypted file to this endpoint
-4. Backend proxies encrypted file to B2
-5. Backend creates file record
+**CRITICAL - True Zero-Knowledge Flow:**
+1. Client generates thumbnails from PLAINTEXT image (client-side only)
+2. Client encrypts: original file + 3 thumbnails (small/medium/large)
+3. Client uploads ONLY encrypted blobs to this endpoint
+4. Backend proxies encrypted blobs to B2 storage
+5. Backend NEVER sees plaintext data at any stage
 
-Backend never sees plaintext file data - only encrypted blob.
+**Backend Guarantees:**
+- Backend receives ONLY encrypted data
+- Backend NEVER decrypts any user data
+- Backend NEVER processes plaintext images
+- Backend validates ONLY encrypted blob sizes
 
-**Thumbnails (optional):**
-Include thumbSmall, thumbMedium, thumbLarge, cipherThumbSmallKey, cipherThumbMediumKey, cipherThumbLargeKey, blurhash, width, height for images/videos.`,
+**Required Fields:**
+- file: Encrypted file blob (multipart)
+- thumbSmall: Base64-encoded encrypted thumbnail (150x150)
+- thumbMedium: Base64-encoded encrypted thumbnail (800x800)
+- thumbLarge: Base64-encoded encrypted thumbnail (1600x1600)
+- cipherFileKey, cipherThumbSmallKey, cipherThumbMediumKey, cipherThumbLargeKey
+- blurhash, width, height (generated client-side from plaintext)
+
+**Size Limits (on encrypted data):**
+- thumbSmall: 500KB max
+- thumbMedium: 2MB max
+- thumbLarge: 10MB max`,
   })
   @ApiResponse({
     status: HttpStatus.CREATED,
-    description: 'File uploaded successfully',
+    description: 'Encrypted file uploaded successfully',
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid encrypted data or size limit exceeded',
   })
   async uploadFile(
     @CurrentUser() authUser: AuthenticatedUser,
@@ -155,7 +173,7 @@ Include thumbSmall, thumbMedium, thumbLarge, cipherThumbSmallKey, cipherThumbMed
       contentHash: contentHash || undefined,
     };
 
-    // Parse thumbnails from base64 if provided
+    // Parse encrypted thumbnails from base64 if provided
     let thumbnailData = undefined;
     if (
       thumbSmallBase64 &&
@@ -165,13 +183,39 @@ Include thumbSmall, thumbMedium, thumbLarge, cipherThumbSmallKey, cipherThumbMed
       cipherThumbMediumKey &&
       cipherThumbLargeKey
     ) {
+      // Decode encrypted thumbnail blobs
+      const thumbSmallBuffer = Buffer.from(thumbSmallBase64, 'base64');
+      const thumbMediumBuffer = Buffer.from(thumbMediumBase64, 'base64');
+      const thumbLargeBuffer = Buffer.from(thumbLargeBase64, 'base64');
+
+      // CRITICAL: Validate encrypted thumbnail sizes
+      const MAX_THUMB_SMALL = 500 * 1024; // 500KB
+      const MAX_THUMB_MEDIUM = 2 * 1024 * 1024; // 2MB
+      const MAX_THUMB_LARGE = 10 * 1024 * 1024; // 10MB
+
+      if (thumbSmallBuffer.length > MAX_THUMB_SMALL) {
+        throw new BadRequestException(
+          `Encrypted small thumbnail exceeds ${MAX_THUMB_SMALL / 1024}KB limit`
+        );
+      }
+      if (thumbMediumBuffer.length > MAX_THUMB_MEDIUM) {
+        throw new BadRequestException(
+          `Encrypted medium thumbnail exceeds ${MAX_THUMB_MEDIUM / (1024 * 1024)}MB limit`
+        );
+      }
+      if (thumbLargeBuffer.length > MAX_THUMB_LARGE) {
+        throw new BadRequestException(
+          `Encrypted large thumbnail exceeds ${MAX_THUMB_LARGE / (1024 * 1024)}MB limit`
+        );
+      }
+
       thumbnailData = {
         cipherThumbSmallKey,
         cipherThumbMediumKey,
         cipherThumbLargeKey,
-        thumbSmallBuffer: Buffer.from(thumbSmallBase64, 'base64'),
-        thumbMediumBuffer: Buffer.from(thumbMediumBase64, 'base64'),
-        thumbLargeBuffer: Buffer.from(thumbLargeBase64, 'base64'),
+        thumbSmallBuffer,
+        thumbMediumBuffer,
+        thumbLargeBuffer,
         blurhash: blurhash || null,
         width: width ? parseInt(width, 10) : null,
         height: height ? parseInt(height, 10) : null,
@@ -179,7 +223,7 @@ Include thumbSmall, thumbMedium, thumbLarge, cipherThumbSmallKey, cipherThumbMed
       };
     }
 
-    // Use unified upload method - handles both with and without thumbnails
+    // Upload encrypted blobs - backend treats all data as opaque encrypted bytes
     if (thumbnailData) {
       return this.filesService.uploadFileWithThumbnails(
         authUser.userId,
