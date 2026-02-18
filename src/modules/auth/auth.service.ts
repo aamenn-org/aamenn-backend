@@ -328,7 +328,7 @@ export class AuthService {
    * Verifies token, creates/finds user, and returns JWT tokens
    */
   async googleLogin(dto: GoogleLoginDto): Promise<TokenResponse & { requiresVaultSetup: boolean }> {
-    const googleClientId = this.configService.get<string>('google.clientId');
+    const googleClientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
     
     if (!googleClientId) {
       throw new BadRequestException('Google authentication is not configured');
