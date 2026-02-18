@@ -82,4 +82,35 @@ export class CreateUserSecurityDto {
   @ValidateNested()
   @Type(() => KdfParamsDto)
   kdfParams: KdfParamsDto;
+
+  @ApiPropertyOptional({
+    description: 'Master key encrypted with recovery-derived KEK (base64)',
+  })
+  @IsOptional()
+  @IsString()
+  recoveryEncryptedMasterKey?: string;
+
+  @ApiPropertyOptional({
+    description: 'Salt for recovery KEK derivation (base64)',
+  })
+  @IsOptional()
+  @IsString()
+  recoverySalt?: string;
+
+  @ApiPropertyOptional({
+    description: 'KDF parameters for recovery KEK derivation',
+    type: KdfParamsDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => KdfParamsDto)
+  recoveryKdfParams?: KdfParamsDto;
+
+  @ApiPropertyOptional({
+    description: 'Recovery key encrypted with masterKey (base64). Allows viewing recovery key later.',
+  })
+  @IsOptional()
+  @IsString()
+  encryptedRecoveryKey?: string;
 }

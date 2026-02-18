@@ -47,6 +47,16 @@ export const googleConfig = registerAs('google', () => ({
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
 }));
 
+export const mailConfig = registerAs('mail', () => ({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.SMTP_PORT || '587', 10),
+  user: process.env.SMTP_USER,
+  pass: process.env.SMTP_PASS,
+  from: process.env.EMAIL_FROM || 'noreply@aamenn.com',
+  otpTtlSeconds: parseInt(process.env.VAULT_RESET_OTP_TTL_SECONDS || '600', 10),
+  resetSessionTtlSeconds: parseInt(process.env.VAULT_RESET_SESSION_TTL_SECONDS || '900', 10),
+}));
+
 export const redisConfig = registerAs('redis', () => ({
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379', 10),

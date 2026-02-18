@@ -47,6 +47,8 @@ export interface TokenResponse {
   tokenType: string;
   /** User role (admin/user) */
   role?: UserRole;
+  /** Authentication provider (local/google) */
+  authProvider?: string;
   /** Master key encrypted with KEK (base64) - client decrypts locally */
   encryptedMasterKey?: string;
   /** Salt for KEK derivation (base64) */

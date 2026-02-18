@@ -119,4 +119,32 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   displayName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Master key encrypted with recovery-derived KEK (base64)',
+  })
+  @IsOptional()
+  @IsString()
+  recoveryEncryptedMasterKey?: string;
+
+  @ApiPropertyOptional({
+    description: 'Salt for recovery KEK derivation (base64)',
+  })
+  @IsOptional()
+  @IsString()
+  recoverySalt?: string;
+
+  @ApiPropertyOptional({
+    description: 'KDF parameters for recovery KEK derivation',
+  })
+  @IsOptional()
+  @IsObject()
+  recoveryKdfParams?: KdfParamsDto;
+
+  @ApiPropertyOptional({
+    description: 'Recovery key encrypted with masterKey (base64)',
+  })
+  @IsOptional()
+  @IsString()
+  encryptedRecoveryKey?: string;
 }

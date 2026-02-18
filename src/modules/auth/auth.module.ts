@@ -8,12 +8,16 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { UsersModule } from '../users/users.module';
+import { VaultModule } from '../vault/vault.module';
+import { OtpModule } from '../otp/otp.module';
 import { RefreshToken } from '../../database/entities/refresh-token.entity';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([RefreshToken]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
+    VaultModule,
+    OtpModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {

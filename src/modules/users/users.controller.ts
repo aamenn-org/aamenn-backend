@@ -10,6 +10,7 @@ import {
   ConflictException,
   UnauthorizedException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -19,11 +20,13 @@ import {
 } from '@nestjs/swagger';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from './users.service';
+import { VaultSecurityService } from '../vault/vault-security.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
 import { CreateUserSecurityDto } from './dto/create-user-security.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
+import { ChangePasswordDto } from '../auth/dto/change-password.dto';
 import {
   CurrentUserResponseDto,
   UserSecurityResponseDto,
@@ -35,7 +38,12 @@ import { ErrorResponseDto } from '../../common/dto';
 @ApiBearerAuth('JWT-auth')
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  private readonly logger = new Logger(UsersController.name);
+
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly vaultSecurityService: VaultSecurityService,
+  ) {}
 
   /**
    * Get current user's profile.
@@ -68,13 +76,13 @@ export class UsersController {
       throw new ConflictException('User not found');
     }
 
-    const security = await this.usersService.getUserSecurity(user.id);
+    const hasSecuritySetup = await this.vaultSecurityService.isVaultConfigured(user.id);
 
     return {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
-      hasSecuritySetup: !!security,
+      hasSecuritySetup,
       authProvider: user.authProvider,
       createdAt: user.createdAt,
     };
@@ -150,12 +158,13 @@ Requires password verification for local auth users.`,
       if (!isPasswordValid) {
         throw new UnauthorizedException('Invalid password');
       }
-    } else if (user.authProvider !== 'local') {
-      // For OAuth users, we might want a different verification method
-      // For now, we'll allow deletion without password (they can re-auth)
-      throw new ForbiddenException(
-        'Account deletion for OAuth users is not yet supported. Please contact support.',
-      );
+    } else if (user.authProvider === 'google') {
+      // For Google users, verify the vault password
+      await this.vaultSecurityService.verifyVaultPassword(user.id, dto.password);
+      this.logger.log(`Google user ${user.email} vault password verified for account deletion`);
+    } else {
+      // For other OAuth providers, allow deletion without password for now
+      this.logger.log(`OAuth user ${user.email} (${user.authProvider}) deleting account`);
     }
 
     // Delete account and all associated data
@@ -190,7 +199,7 @@ Requires password verification for local auth users.`,
   async getUserSecurity(
     @CurrentUser() authUser: AuthenticatedUser,
   ): Promise<UserSecurityResponseDto> {
-    const security = await this.usersService.getUserSecurity(authUser.userId);
+    const security = await this.vaultSecurityService.getVaultSecurity(authUser.userId);
 
     if (!security) {
       return {
@@ -242,7 +251,7 @@ Requires password verification for local auth users.`,
     @CurrentUser() authUser: AuthenticatedUser,
     @Body() dto: CreateUserSecurityDto,
   ): Promise<SecuritySetupResponseDto> {
-    const existingSecurity = await this.usersService.getUserSecurity(
+    const existingSecurity = await this.vaultSecurityService.getVaultSecurity(
       authUser.userId,
     );
     if (existingSecurity) {
@@ -254,6 +263,61 @@ Requires password verification for local auth users.`,
     return {
       success: true,
       message: 'Security parameters configured successfully',
+    };
+  }
+
+  /**
+   * Change vault password.
+   * Client re-wraps the same masterKey with a new password-derived KEK.
+   * No file re-encryption needed — only the key wrapper changes.
+   */
+  @Patch('me/vault-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Change vault password',
+    description: `Change the user's vault password. The masterKey stays the same — only its encryption wrapper is updated.
+
+**Flow:**
+1. Client decrypts masterKey with current password
+2. Client re-encrypts masterKey with new password
+3. Server updates encryptedMasterKey, kekSalt, and passwordHash`,
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Vault password changed' })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'Invalid current password', type: ErrorResponseDto })
+  async changeVaultPassword(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    const user = await this.usersService.findUser({ id: authUser.userId });
+    if (!user) {
+      throw new ConflictException('User not found');
+    }
+
+    // Verify current password for local users
+    if (user.authProvider === 'local' && user.passwordHash) {
+      const isValid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+      if (!isValid) {
+        throw new UnauthorizedException('Current password is incorrect');
+      }
+    }
+
+    // Update password hash for local users
+    if (user.authProvider === 'local') {
+      const newHash = await bcrypt.hash(dto.newPassword, 12);
+      await this.usersService.updatePasswordHash(authUser.userId, newHash);
+    }
+
+    // Update vault encryption wrapper (same masterKey, new KEK)
+    await this.usersService.updateSecurityParams(
+      authUser.userId,
+      dto.newEncryptedMasterKey,
+      dto.newKekSalt,
+      dto.newKdfParams,
+    );
+
+    return {
+      success: true,
+      message: 'Vault password changed successfully',
     };
   }
 

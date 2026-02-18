@@ -11,6 +11,7 @@ import { AlbumsModule } from './modules/albums/albums.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CacheModule } from './modules/cache/cache.module';
+import { MailModule } from './modules/mail/mail.module';
 
 import { User } from './database/entities/user.entity';
 import { UserSecurity } from './database/entities/user-security.entity';
@@ -29,6 +30,7 @@ import {
   throttleConfig,
   storageConfig,
   googleConfig,
+  mailConfig,
   redisConfig,
 } from './config/configuration';
 
@@ -46,6 +48,7 @@ import {
         throttleConfig,
         storageConfig,
         googleConfig,
+        mailConfig,
         redisConfig,
       ],
     }),
@@ -112,6 +115,7 @@ import {
 
     // Feature modules
     CacheModule,
+    MailModule,
     AuthModule,
     UsersModule,
     FilesModule,

@@ -28,6 +28,11 @@ import {
   RegisterResponseDto,
   ChangePasswordDto,
   LogoutDto,
+  GoogleLoginDto,
+  VaultResetRequestDto,
+  VaultResetVerifyDto,
+  VaultResetParamsDto,
+  VaultResetCompleteDto,
 } from './dto';
 import { ErrorResponseDto } from '../../common/dto';
 
@@ -188,5 +193,91 @@ Server NEVER sees the plaintext master key.`,
       success: true,
       message: 'Successfully logged out from all sessions',
     };
+  }
+
+  @Post('google')
+  @Public()
+  @UseGuards(AuthThrottleGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Login with Google',
+    description: 'Authenticate with Google ID token and get JWT tokens. Returns requiresVaultSetup flag for first-time users.',
+  })
+  @ApiBody({ type: GoogleLoginDto })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Google login successful',
+  })
+  @ApiResponse({
+    status: HttpStatus.UNAUTHORIZED,
+    description: 'Invalid Google ID token',
+    type: ErrorResponseDto,
+  })
+  async googleLogin(@Body() dto: GoogleLoginDto) {
+    return this.authService.googleLogin(dto);
+  }
+
+  // ==================== VAULT RESET (Forgot Password) ====================
+
+  @Post('vault-reset/request')
+  @Public()
+  @UseGuards(AuthThrottleGuard)
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request vault password reset OTP' })
+  @ApiBody({ type: VaultResetRequestDto })
+  @ApiResponse({ status: HttpStatus.OK, description: 'OTP sent if email exists' })
+  async vaultResetRequest(@Body() dto: VaultResetRequestDto) {
+    await this.authService.vaultResetRequest(dto);
+    return { success: true, message: 'If the email exists, a reset code has been sent.' };
+  }
+
+  @Post('vault-reset/verify')
+  @Public()
+  @UseGuards(AuthThrottleGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify OTP and get reset session token' })
+  @ApiBody({ type: VaultResetVerifyDto })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Reset session token returned' })
+  async vaultResetVerify(@Body() dto: VaultResetVerifyDto) {
+    return this.authService.vaultResetVerify(dto);
+  }
+
+  @Post('vault-reset/params')
+  @Public()
+  @UseGuards(AuthThrottleGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get recovery params for client-side decryption' })
+  @ApiBody({ type: VaultResetParamsDto })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Recovery encryption params returned' })
+  async vaultResetGetParams(@Body() dto: VaultResetParamsDto) {
+    return this.authService.vaultResetGetParams(dto);
+  }
+
+  @Post('vault-reset/complete')
+  @Public()
+  @UseGuards(AuthThrottleGuard)
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Complete vault reset with new password' })
+  @ApiBody({ type: VaultResetCompleteDto })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Vault password reset successfully' })
+  async vaultResetComplete(@Body() dto: VaultResetCompleteDto) {
+    await this.authService.vaultResetComplete(dto);
+    return { success: true, message: 'Vault password reset successfully. Please login again.' };
+  }
+
+  // DEBUG: Test email endpoint (remove in production)
+  @Post('debug-email')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Debug: Test email sending' })
+  async debugEmail(@Body() body: { email: string }) {
+    const otp = await this.authService['otpService'].generateOtp(body.email);
+    await this.authService['mailService'].sendOtpEmail(body.email, otp, this.authService['otpService'].getOtpTtlMinutes());
+    return { success: true, message: 'Test email sent', otp };
   }
 }

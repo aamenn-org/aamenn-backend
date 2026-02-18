@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { User } from '../../database/entities/user.entity';
 import { UserSecurity } from '../../database/entities/user-security.entity';
 import { File } from '../../database/entities/file.entity';
@@ -96,18 +96,6 @@ export class UsersService {
   }
 
   /**
-   * Get user's security parameters (encrypted master key and KDF params).
-   * Client uses these to derive KEK and decrypt master key locally.
-   */
-  async getUserSecurity(userId: string): Promise<UserSecurity | null> {
-    const result = await this.userSecurityRepository.findOne({
-      where: { userId },
-    });
-
-    return result;
-  }
-
-  /**
    * Get storage usage for a user (delegates to FilesService).
    */
   async getStorageUsage(userId: string) {
@@ -136,6 +124,10 @@ export class UsersService {
       encryptedMasterKey: dto.encryptedMasterKey,
       kekSalt: dto.kekSalt,
       kdfParams: dto.kdfParams,
+      recoveryEncryptedMasterKey: dto.recoveryEncryptedMasterKey || null,
+      recoverySalt: dto.recoverySalt || null,
+      recoveryKdfParams: dto.recoveryKdfParams || null,
+      encryptedRecoveryKey: dto.encryptedRecoveryKey || null,
     });
 
     return this.userSecurityRepository.save(userSecurity);
@@ -144,11 +136,13 @@ export class UsersService {
   /**
    * Update user's security parameters (for password change).
    * Re-encrypts master key with new KEK derived from new password.
+   * The masterKey itself is unchanged — only its wrapping changes.
    */
   async updateSecurityParams(
     userId: string,
     encryptedMasterKey: string,
     kekSalt: string,
+    kdfParams?: Record<string, any>,
   ): Promise<UserSecurity> {
     const security = await this.userSecurityRepository.findOne({
       where: { userId },
@@ -160,6 +154,9 @@ export class UsersService {
 
     security.encryptedMasterKey = encryptedMasterKey;
     security.kekSalt = kekSalt;
+    if (kdfParams) {
+      security.kdfParams = kdfParams as any;
+    }
 
     return this.userSecurityRepository.save(security);
   }
@@ -231,10 +228,18 @@ export class UsersService {
       }
     }
 
-    // 3. Delete all album_files records
-    await this.albumFilesRepository.delete({
-      file: { userId },
+    // 3. Delete all album_files records (delete by finding files first)
+    const userFiles = await this.filesRepository.find({
+      where: { userId },
+      select: ['id'],
     });
+    
+    if (userFiles.length > 0) {
+      const fileIds = userFiles.map(f => f.id);
+      await this.albumFilesRepository.delete({
+        fileId: In(fileIds),
+      });
+    }
 
     // 4. Delete all files from database
     await this.filesRepository.delete({ userId });

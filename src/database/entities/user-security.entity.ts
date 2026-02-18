@@ -50,6 +50,38 @@ export class UserSecurity {
     hashLength?: number;
   };
 
+  /**
+   * Master key encrypted with recovery-derived KEK.
+   * Used when user forgets password but has recovery key.
+   */
+  @Column({ type: 'text', name: 'recovery_encrypted_master_key', nullable: true })
+  recoveryEncryptedMasterKey: string | null;
+
+  /**
+   * Salt used to derive recovery KEK from recovery key.
+   */
+  @Column({ type: 'text', name: 'recovery_salt', nullable: true })
+  recoverySalt: string | null;
+
+  /**
+   * KDF parameters for deriving recovery KEK.
+   */
+  @Column({ type: 'jsonb', name: 'recovery_kdf_params', nullable: true })
+  recoveryKdfParams: {
+    algorithm: string;
+    iterations?: number;
+    memory?: number;
+    parallelism?: number;
+    hashLength?: number;
+  } | null;
+
+  /**
+   * Recovery key encrypted with masterKey.
+   * Allows user to view their recovery key later from Settings.
+   */
+  @Column({ type: 'text', name: 'encrypted_recovery_key', nullable: true })
+  encryptedRecoveryKey: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

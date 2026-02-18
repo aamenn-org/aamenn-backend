@@ -9,11 +9,13 @@ import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { FilesModule } from '../files/files.module';
 import { StorageModule } from '../storage/storage.module';
+import { VaultModule } from '../vault/vault.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, UserSecurity, File, Album, AlbumFile]),
     FilesModule,
+    VaultModule,
     forwardRef(() => StorageModule),
   ],
   controllers: [UsersController],
