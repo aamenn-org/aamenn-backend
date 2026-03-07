@@ -50,24 +50,7 @@ export class File {
   @Column({ type: 'text', name: 'cipher_file_key' })
   cipherFileKey: string;
 
-  /**
-   * Encryption key for small thumbnail, encrypted with user's master key
-   */
-  @Column({ type: 'text', name: 'cipher_thumb_small_key', nullable: true })
-  cipherThumbSmallKey: string | null;
-
-  /**
-   * Encryption key for medium thumbnail, encrypted with user's master key
-   */
-  @Column({ type: 'text', name: 'cipher_thumb_medium_key', nullable: true })
-  cipherThumbMediumKey: string | null;
-
-  /**
-   * Encryption key for large thumbnail, encrypted with user's master key
-   */
-  @Column({ type: 'text', name: 'cipher_thumb_large_key', nullable: true })
-  cipherThumbLargeKey: string | null;
-
+  
   /**
    * The original filename, encrypted client-side.
    * Backend cannot read this - only the client can.
@@ -81,12 +64,7 @@ export class File {
   @Column({ type: 'bigint', name: 'size_bytes', nullable: true })
   sizeBytes: number | null;
 
-  /**
-   * Blurhash string for placeholder (safe to store in plaintext)
-   */
-  @Column({ type: 'varchar', length: 100, nullable: true })
-  blurhash: string | null;
-
+  
   /**
    * Original image width
    */

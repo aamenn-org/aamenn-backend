@@ -6,8 +6,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Repository, IsNull, In } from 'typeorm';
+import { Repository, IsNull, In, Not } from 'typeorm';
 import { File } from '../../database/entities/file.entity';
+import { User } from '../../database/entities/user.entity';
 import { AlbumFile } from '../../database/entities/album-file.entity';
 import {
   DownloadLog,
@@ -21,13 +22,9 @@ import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import pLimit from 'p-limit';
 
 interface ThumbnailData {
-  cipherThumbSmallKey: string;
-  cipherThumbMediumKey: string;
-  cipherThumbLargeKey: string;
   thumbSmallBuffer: Buffer;
   thumbMediumBuffer: Buffer;
   thumbLargeBuffer: Buffer;
-  blurhash: string | null;
   width: number | null;
   height: number | null;
   duration?: number | null; // Video duration in seconds
@@ -46,6 +43,8 @@ export class FilesService {
   constructor(
     @InjectRepository(File)
     private filesRepository: Repository<File>,
+    @InjectRepository(User)
+    private usersRepository: Repository<User>,
     @InjectRepository(AlbumFile)
     private albumFilesRepository: Repository<AlbumFile>,
     @InjectRepository(DownloadLog)
@@ -94,7 +93,6 @@ export class FilesService {
         fileNameEncrypted: existingFile.fileNameEncrypted,
         mimeType: existingFile.mimeType,
         sizeBytes: existingFile.sizeBytes,
-        blurhash: existingFile.blurhash,
         width: existingFile.width,
         height: existingFile.height,
         createdAt: existingFile.createdAt,
@@ -141,7 +139,6 @@ export class FilesService {
       fileNameEncrypted: file.fileNameEncrypted,
       mimeType: file.mimeType,
       sizeBytes: file.sizeBytes,
-      blurhash: file.blurhash,
       width: file.width,
       height: file.height,
       duration: file.duration,
@@ -152,19 +149,14 @@ export class FilesService {
 
   /**
    * Upload file with thumbnails (for images).
-   * Generates small and medium thumbnails, plus blurhash.
    * All thumbnails are encrypted client-side before being stored.
    */
   async uploadFileWithThumbnails(
     userId: string,
-    dto: InitiateUploadDto & {
-      cipherThumbSmallKey?: string;
-      cipherThumbMediumKey?: string;
-      cipherThumbLargeKey?: string;
-    },
+    dto: InitiateUploadDto,
     fileBuffer: Buffer,
     sha1Hash: string,
-    thumbnailData?: ThumbnailData,
+    thumbnailData: ThumbnailData | null, // Now optional
   ) {
     this.logger.debug(
       `Starting file upload with thumbnails for user ${userId}`,
@@ -173,59 +165,44 @@ export class FilesService {
     // Generate file path for original
     const b2FilePath = this.b2StorageService.generateFilePath(userId);
 
-    // Prepare thumbnail paths if thumbnails are provided
+    // Generate thumbnail paths (optional for media files)
     let thumbSmallPath: string | null = null;
     let thumbMediumPath: string | null = null;
     let thumbLargePath: string | null = null;
-
-    if (thumbnailData) {
-      thumbSmallPath = this.b2StorageService.generateFilePath(
-        userId,
-        'thumb-small',
-      );
-      thumbMediumPath = this.b2StorageService.generateFilePath(
-        userId,
-        'thumb-medium',
-      );
-      thumbLargePath = this.b2StorageService.generateFilePath(
-        userId,
-        'thumb-large',
-      );
-    }
-
-    // Compute thumbnail hashes in parallel (CPU-bound, fast)
-    const [thumbSmallHash, thumbMediumHash, thumbLargeHash] = thumbnailData
-      ? await Promise.all([
-          this.computeSha1(thumbnailData.thumbSmallBuffer),
-          this.computeSha1(thumbnailData.thumbMediumBuffer),
-          this.computeSha1(thumbnailData.thumbLargeBuffer),
-        ])
-      : [null, null, null];
-
-    // Upload ALL files to B2 with concurrency control
-    // Use p-limit to prevent overwhelming B2 API with too many concurrent uploads
-    const uploadPromises: Promise<void>[] = [
+    let uploadPromises: Promise<void>[] = [
       this.uploadLimit(() => this.b2StorageService.uploadFile(b2FilePath, fileBuffer, sha1Hash)),
     ];
 
-    if (thumbnailData && thumbSmallPath && thumbMediumPath && thumbLargePath) {
-      this.logger.debug('Uploading main file and thumbnails with concurrency control...');
+    // Process thumbnails only if they exist
+    if (thumbnailData) {
+      thumbSmallPath = this.b2StorageService.generateFilePath(userId, 'thumb-small');
+      thumbMediumPath = this.b2StorageService.generateFilePath(userId, 'thumb-medium');
+      thumbLargePath = this.b2StorageService.generateFilePath(userId, 'thumb-large');
+
+      // Compute thumbnail hashes in parallel (CPU-bound, fast)
+      const [thumbSmallHash, thumbMediumHash, thumbLargeHash] = await Promise.all([
+        this.computeSha1(thumbnailData.thumbSmallBuffer),
+        this.computeSha1(thumbnailData.thumbMediumBuffer),
+        this.computeSha1(thumbnailData.thumbLargeBuffer),
+      ]);
+
+      // Add thumbnail uploads to promises
       uploadPromises.push(
         this.uploadLimit(() => this.b2StorageService.uploadFile(
-          thumbSmallPath,
+          thumbSmallPath!,
           thumbnailData.thumbSmallBuffer,
-          thumbSmallHash!,
+          thumbSmallHash,
         )),
         this.uploadLimit(() => this.b2StorageService.uploadFile(
-          thumbMediumPath,
+          thumbMediumPath!,
           thumbnailData.thumbMediumBuffer,
-          thumbMediumHash!,
+          thumbMediumHash,
         )),
         this.uploadLimit(() => this.b2StorageService.uploadFile(
-          thumbLargePath,
+          thumbLargePath!,
           thumbnailData.thumbLargeBuffer,
-          thumbLargeHash!,
-        )),
+          thumbLargeHash,
+        ))
       );
     }
 
@@ -241,45 +218,37 @@ export class FilesService {
       mimeType: dto.mimeType,
       sizeBytes: dto.sizeBytes,
       contentHash: dto.contentHash || null,
+      b2ThumbSmallPath: thumbSmallPath,
+      b2ThumbMediumPath: thumbMediumPath,
+      b2ThumbLargePath: thumbLargePath,
+      width: thumbnailData?.width,
+      height: thumbnailData?.height,
     });
 
-    // Add thumbnail data if provided
-    if (thumbnailData && thumbSmallPath && thumbMediumPath && thumbLargePath) {
-      file.b2ThumbSmallPath = thumbSmallPath;
-      file.b2ThumbMediumPath = thumbMediumPath;
-      file.b2ThumbLargePath = thumbLargePath;
-      file.cipherThumbSmallKey = thumbnailData.cipherThumbSmallKey;
-      file.cipherThumbMediumKey = thumbnailData.cipherThumbMediumKey;
-      file.cipherThumbLargeKey = thumbnailData.cipherThumbLargeKey;
-      file.blurhash = thumbnailData.blurhash;
-      file.width = thumbnailData.width;
-      file.height = thumbnailData.height;
-      if (thumbnailData.duration !== undefined) {
-        file.duration = thumbnailData.duration;
-      }
+    if (thumbnailData?.duration !== undefined) {
+      file.duration = thumbnailData.duration;
     }
 
     await this.filesRepository.save(file);
 
     await this.cacheService.incrementVersion(userId, 'files');
 
-    // Generate signed URLs for thumbnails so frontend can display them immediately
-    let thumbSmallUrl: string | null = null;
-    let thumbMediumUrl: string | null = null;
-    let thumbLargeUrl: string | null = null;
-
-    if (thumbnailData && thumbSmallPath && thumbMediumPath && thumbLargePath) {
-      const [thumbSmallResult, thumbMediumResult, thumbLargeResult] =
-        await Promise.all([
-          this.b2StorageService.getSignedDownloadUrl(thumbSmallPath),
-          this.b2StorageService.getSignedDownloadUrl(thumbMediumPath),
-          this.b2StorageService.getSignedDownloadUrl(thumbLargePath),
-        ]);
-
-      thumbSmallUrl = thumbSmallResult.downloadUrl;
-      thumbMediumUrl = thumbMediumResult.downloadUrl;
-      thumbLargeUrl = thumbLargeResult.downloadUrl;
+    // Generate signed URLs for thumbnails only if they exist
+    let thumbSmallResult = null;
+    let thumbMediumResult = null;
+    let thumbLargeResult = null;
+    
+    if (thumbSmallPath && thumbMediumPath && thumbLargePath) {
+      [thumbSmallResult, thumbMediumResult, thumbLargeResult] = await Promise.all([
+        this.b2StorageService.getSignedDownloadUrl(thumbSmallPath),
+        this.b2StorageService.getSignedDownloadUrl(thumbMediumPath),
+        this.b2StorageService.getSignedDownloadUrl(thumbLargePath),
+      ]);
     }
+
+    const thumbSmallUrl = thumbSmallResult?.downloadUrl;
+    const thumbMediumUrl = thumbMediumResult?.downloadUrl;
+    const thumbLargeUrl = thumbLargeResult?.downloadUrl;
 
     return {
       fileId: file.id,
@@ -288,14 +257,9 @@ export class FilesService {
       fileNameEncrypted: file.fileNameEncrypted,
       mimeType: file.mimeType,
       sizeBytes: file.sizeBytes,
-      blurhash: file.blurhash,
       width: file.width,
       height: file.height,
       duration: file.duration,
-      hasThumbnails: !!thumbnailData,
-      cipherThumbSmallKey: file.cipherThumbSmallKey,
-      cipherThumbMediumKey: file.cipherThumbMediumKey,
-      cipherThumbLargeKey: file.cipherThumbLargeKey,
       thumbSmallUrl,
       thumbMediumUrl,
       thumbLargeUrl,
@@ -356,26 +320,36 @@ export class FilesService {
     const filesWithUrls = await Promise.all(
       files.map(async (file) => {
         try {
+          // Skip files with missing cipherFileKey (corrupted data)
+          if (!file.cipherFileKey) {
+            this.logger.warn(`Skipping file ${file.id} in batch - missing cipherFileKey`);
+            return null;
+          }
+
           // Get signed download URLs in parallel
+          const promises = [
+            this.b2StorageService.getSignedDownloadUrl(file.b2FilePath),
+          ];
+          
+          // Add thumbnail URLs only if they exist
+          if (file.b2ThumbSmallPath) {
+            promises.push(this.b2StorageService.getSignedDownloadUrl(file.b2ThumbSmallPath));
+          } else {
+            promises.push(Promise.resolve(null) as Promise<any>);
+          }
+          if (file.b2ThumbMediumPath) {
+            promises.push(this.b2StorageService.getSignedDownloadUrl(file.b2ThumbMediumPath));
+          } else {
+            promises.push(Promise.resolve(null) as Promise<any>);
+          }
+          if (file.b2ThumbLargePath) {
+            promises.push(this.b2StorageService.getSignedDownloadUrl(file.b2ThumbLargePath));
+          } else {
+            promises.push(Promise.resolve(null) as Promise<any>);
+          }
+
           const [downloadResult, thumbSmallResult, thumbMediumResult, thumbLargeResult] =
-            await Promise.all([
-              this.b2StorageService.getSignedDownloadUrl(file.b2FilePath),
-              file.b2ThumbSmallPath
-                ? this.b2StorageService.getSignedDownloadUrl(
-                    file.b2ThumbSmallPath,
-                  )
-                : Promise.resolve(null),
-              file.b2ThumbMediumPath
-                ? this.b2StorageService.getSignedDownloadUrl(
-                    file.b2ThumbMediumPath,
-                  )
-                : Promise.resolve(null),
-              file.b2ThumbLargePath
-                ? this.b2StorageService.getSignedDownloadUrl(
-                    file.b2ThumbLargePath,
-                  )
-                : Promise.resolve(null),
-            ]);
+            await Promise.all(promises);
 
           // Log download for bandwidth tracking (fire and forget)
           this.logDownload(
@@ -390,20 +364,16 @@ export class FilesService {
           return {
             fileId: file.id,
             cipherFileKey: file.cipherFileKey,
-            cipherThumbSmallKey: file.cipherThumbSmallKey,
-            cipherThumbMediumKey: file.cipherThumbMediumKey,
-            cipherThumbLargeKey: file.cipherThumbLargeKey,
             fileNameEncrypted: file.fileNameEncrypted,
             mimeType: file.mimeType,
             sizeBytes: file.sizeBytes,
-            blurhash: file.blurhash,
             width: file.width,
             height: file.height,
             duration: file.duration,
             downloadUrl: downloadResult.downloadUrl,
-            thumbSmallUrl: thumbSmallResult?.downloadUrl || null,
-            thumbMediumUrl: thumbMediumResult?.downloadUrl || null,
-            thumbLargeUrl: thumbLargeResult?.downloadUrl || null,
+            thumbSmallUrl: thumbSmallResult.downloadUrl,
+            thumbMediumUrl: thumbMediumResult.downloadUrl,
+            thumbLargeUrl: thumbLargeResult.downloadUrl,
             createdAt: file.createdAt,
             updatedAt: file.updatedAt,
           };
@@ -443,36 +413,33 @@ export class FilesService {
       throw new ForbiddenException('Access denied');
     }
 
+    // Skip files with missing cipherFileKey (corrupted data)
+    if (!file.cipherFileKey) {
+      this.logger.warn(`File ${file.id} has missing cipherFileKey - data corrupted`);
+      throw new NotFoundException('File data corrupted');
+    }
+
     // Get signed download URL for original file
     const { downloadUrl } = await this.b2StorageService.getSignedDownloadUrl(
       file.b2FilePath,
     );
 
-    // Get thumbnail URLs if available
-    let thumbSmallUrl: string | null = null;
-    let thumbMediumUrl: string | null = null;
-    let thumbLargeUrl: string | null = null;
-
-    if (file.b2ThumbSmallPath) {
-      const result = await this.b2StorageService.getSignedDownloadUrl(
-        file.b2ThumbSmallPath,
-      );
-      thumbSmallUrl = result.downloadUrl;
+    // Get thumbnail URLs (optional for documents)
+    let thumbSmallResult = null;
+    let thumbMediumResult = null;
+    let thumbLargeResult = null;
+    
+    if (file.b2ThumbSmallPath && file.b2ThumbMediumPath && file.b2ThumbLargePath) {
+      [thumbSmallResult, thumbMediumResult, thumbLargeResult] = await Promise.all([
+        this.b2StorageService.getSignedDownloadUrl(file.b2ThumbSmallPath),
+        this.b2StorageService.getSignedDownloadUrl(file.b2ThumbMediumPath),
+        this.b2StorageService.getSignedDownloadUrl(file.b2ThumbLargePath),
+      ]);
     }
 
-    if (file.b2ThumbMediumPath) {
-      const result = await this.b2StorageService.getSignedDownloadUrl(
-        file.b2ThumbMediumPath,
-      );
-      thumbMediumUrl = result.downloadUrl;
-    }
-
-    if (file.b2ThumbLargePath) {
-      const result = await this.b2StorageService.getSignedDownloadUrl(
-        file.b2ThumbLargePath,
-      );
-      thumbLargeUrl = result.downloadUrl;
-    }
+    const thumbSmallUrl = thumbSmallResult?.downloadUrl;
+    const thumbMediumUrl = thumbMediumResult?.downloadUrl;
+    const thumbLargeUrl = thumbLargeResult?.downloadUrl;
 
     // Log download for bandwidth tracking (fire and forget)
     this.logDownload(
@@ -487,13 +454,9 @@ export class FilesService {
     return {
       fileId: file.id,
       cipherFileKey: file.cipherFileKey,
-      cipherThumbSmallKey: file.cipherThumbSmallKey,
-      cipherThumbMediumKey: file.cipherThumbMediumKey,
-      cipherThumbLargeKey: file.cipherThumbLargeKey,
       fileNameEncrypted: file.fileNameEncrypted,
       mimeType: file.mimeType,
       sizeBytes: file.sizeBytes,
-      blurhash: file.blurhash,
       width: file.width,
       height: file.height,
       duration: file.duration,
@@ -544,9 +507,16 @@ export class FilesService {
     }
 
     // Cache miss - query database
+    // Exclude the user's avatar file from the gallery listing
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    const avatarFileId = user?.avatarFileId;
+
     const whereClause: any = { userId, deletedAt: IsNull() };
     if (favorite !== undefined) {
       whereClause.isFavorite = favorite;
+    }
+    if (avatarFileId) {
+      whereClause.id = Not(avatarFileId);
     }
 
     const [files, total] = await this.filesRepository.findAndCount({
@@ -582,32 +552,31 @@ export class FilesService {
       files.map(async (file) => {
         let thumbSmallUrl: string | null = null;
 
-        // Only fetch thumbnail URL if thumbnail exists
-        if (file.b2ThumbSmallPath) {
-          try {
+        // Fetch thumbnail URL only if thumbnail exists
+        try {
+          if (file.b2ThumbSmallPath) {
             const result = await this.b2StorageService.getSignedDownloadUrl(
               file.b2ThumbSmallPath,
             );
             thumbSmallUrl = result.downloadUrl;
-          } catch (error) {
-            this.logger.warn(
-              `Failed to get thumbnail URL for file ${file.id}:`,
-              error,
-            );
           }
+        } catch (error) {
+          this.logger.warn(
+            `Failed to get thumbnail URL for file ${file.id}:`,
+            error,
+          );
         }
 
         return {
           fileId: file.id,
+          cipherFileKey: file.cipherFileKey,
           fileNameEncrypted: file.fileNameEncrypted,
           mimeType: file.mimeType,
           sizeBytes: file.sizeBytes,
-          blurhash: file.blurhash,
           width: file.width,
           height: file.height,
           duration: file.duration,
           isFavorite: file.isFavorite,
-          cipherThumbSmallKey: file.cipherThumbSmallKey,
           thumbSmallUrl,
           createdAt: file.createdAt,
           updatedAt: file.updatedAt,
@@ -711,13 +680,139 @@ export class FilesService {
 
 
   /**
-   * Delete a file permanently from B2 storage and database.
-   * Also removes all album associations.
+   * Move a file to trash (soft-delete).
+   * Sets deletedAt timestamp without removing from B2 or albums.
    */
-  async deleteFile(fileId: string, userId: string) {
-    const file = await this.filesRepository.findOne({
-      where: { id: fileId, userId },
-    });
+  async moveToTrash(fileId: string, userId: string) {
+    const file = await this.verifyFileOwnership(fileId, userId);
+
+    await this.filesRepository.softDelete({ id: fileId, userId });
+
+    await this.cacheService.incrementVersion(userId, 'files');
+    await this.cacheService.incrementVersion(userId, 'albums');
+
+    return { success: true, message: 'File moved to trash' };
+  }
+
+  /**
+   * Move multiple files to trash (bulk operation).
+   */
+  async moveToTrashBulk(fileIds: string[], userId: string) {
+    if (fileIds.length === 0) return { success: true, count: 0 };
+
+    const count = await this.filesRepository
+      .createQueryBuilder('file')
+      .where('file.id IN (:...fileIds)', { fileIds })
+      .andWhere('file.userId = :userId', { userId })
+      .andWhere('file.deleted_at IS NULL')
+      .getCount();
+
+    if (count === 0) {
+      throw new NotFoundException('No files found to move to trash');
+    }
+
+    await this.filesRepository.softDelete({ id: In(fileIds), userId });
+
+    await this.cacheService.incrementVersion(userId, 'files');
+    await this.cacheService.incrementVersion(userId, 'albums');
+
+    return { success: true, count };
+  }
+
+  /**
+   * List files in trash for a user.
+   */
+  async listTrash(
+    userId: string,
+    options: { page?: number; limit?: number } = {},
+  ) {
+    const { page = 1, limit = 50 } = options;
+    const skip = (page - 1) * limit;
+
+    const [files, total] = await this.filesRepository
+      .createQueryBuilder('file')
+      .where('file.userId = :userId', { userId })
+      .andWhere('file.deleted_at IS NOT NULL')
+      .withDeleted()
+      .orderBy('file.deleted_at', 'DESC')
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    const filesWithUrls = await this.generateFilesWithUrls(files);
+
+    return {
+      files: filesWithUrls,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Restore a file from trash.
+   */
+  async restoreFile(fileId: string, userId: string) {
+    const file = await this.filesRepository
+      .createQueryBuilder('file')
+      .where('file.id = :fileId', { fileId })
+      .andWhere('file.userId = :userId', { userId })
+      .andWhere('file.deleted_at IS NOT NULL')
+      .withDeleted()
+      .getOne();
+
+    if (!file) {
+      throw new NotFoundException('File not found in trash');
+    }
+
+    await this.filesRepository.restore({ id: fileId, userId });
+
+    await this.cacheService.incrementVersion(userId, 'files');
+    await this.cacheService.incrementVersion(userId, 'albums');
+
+    return { success: true, message: 'File restored' };
+  }
+
+  /**
+   * Restore multiple files from trash (bulk operation).
+   */
+  async restoreFilesBulk(fileIds: string[], userId: string) {
+    if (fileIds.length === 0) return { success: true, count: 0 };
+
+    const count = await this.filesRepository
+      .createQueryBuilder('file')
+      .where('file.id IN (:...fileIds)', { fileIds })
+      .andWhere('file.userId = :userId', { userId })
+      .andWhere('file.deleted_at IS NOT NULL')
+      .withDeleted()
+      .getCount();
+
+    if (count === 0) {
+      throw new NotFoundException('No files found in trash to restore');
+    }
+
+    await this.filesRepository.restore({ id: In(fileIds), userId });
+
+    await this.cacheService.incrementVersion(userId, 'files');
+    await this.cacheService.incrementVersion(userId, 'albums');
+
+    return { success: true, count };
+  }
+
+  /**
+   * Permanently delete a file from B2 storage and database.
+   * Can target both active and trashed files.
+   */
+  async deleteFilePermanently(fileId: string, userId: string) {
+    const file = await this.filesRepository
+      .createQueryBuilder('file')
+      .where('file.id = :fileId', { fileId })
+      .andWhere('file.userId = :userId', { userId })
+      .withDeleted()
+      .getOne();
 
     if (!file) {
       throw new NotFoundException('File not found');
@@ -729,6 +824,7 @@ export class FilesService {
         file.b2FilePath,
         file.b2ThumbSmallPath,
         file.b2ThumbMediumPath,
+        file.b2ThumbLargePath,
       ]);
     } catch (error) {
       this.logger.error(`Failed to delete file from B2: ${file.id}`, error);
@@ -748,17 +844,81 @@ export class FilesService {
   }
 
   /**
+   * Permanently delete multiple files (bulk operation).
+   */
+  async deleteFilesPermanentlyBulk(fileIds: string[], userId: string) {
+    if (fileIds.length === 0) return { success: true, count: 0 };
+
+    const files = await this.filesRepository
+      .createQueryBuilder('file')
+      .where('file.id IN (:...fileIds)', { fileIds })
+      .andWhere('file.userId = :userId', { userId })
+      .withDeleted()
+      .getMany();
+
+    if (files.length === 0) {
+      throw new NotFoundException('No files found to delete');
+    }
+
+    // Delete from B2 in parallel
+    await Promise.all(
+      files.map(async (file) => {
+        try {
+          await this.b2StorageService.deleteFiles([
+            file.b2FilePath,
+            file.b2ThumbSmallPath,
+            file.b2ThumbMediumPath,
+            file.b2ThumbLargePath,
+          ]);
+        } catch (error) {
+          this.logger.error(`Failed to delete file from B2: ${file.id}`, error);
+        }
+      }),
+    );
+
+    // Remove album associations
+    await this.albumFilesRepository.delete({ fileId: In(fileIds) });
+
+    // Remove from database
+    await this.filesRepository.remove(files);
+
+    await this.cacheService.incrementVersion(userId, 'files');
+    await this.cacheService.incrementVersion(userId, 'albums');
+
+    return { success: true, count: files.length };
+  }
+
+  /**
+   * Empty trash - permanently delete all trashed files for a user.
+   */
+  async emptyTrash(userId: string) {
+    const files = await this.filesRepository
+      .createQueryBuilder('file')
+      .where('file.userId = :userId', { userId })
+      .andWhere('file.deleted_at IS NOT NULL')
+      .withDeleted()
+      .getMany();
+
+    if (files.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    const fileIds = files.map((f) => f.id);
+    return this.deleteFilesPermanentlyBulk(fileIds, userId);
+  }
+
+  /**
    * Get storage usage for a user.
    * Returns current usage, limit, and whether exceeded.
+   * Includes trashed files since they still occupy B2 storage.
    */
   async getStorageUsage(userId: string) {
-    // Get total bytes used and file count (excluding soft-deleted files)
+    // Get total bytes used (including trashed files) and active file count
     const result = await this.filesRepository
       .createQueryBuilder('file')
       .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
-      .addSelect('COUNT(file.id)', 'fileCount')
+      .addSelect('COUNT(CASE WHEN file.deletedAt IS NULL THEN 1 END)', 'fileCount')
       .where('file.userId = :userId', { userId })
-      .andWhere('file.deletedAt IS NULL')
       .getRawOne();
 
     const usedBytes = parseInt(result.totalBytes, 10) || 0;

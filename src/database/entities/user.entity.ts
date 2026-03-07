@@ -54,6 +54,12 @@ export class User {
   @Column({ type: 'timestamp', name: 'last_login_at', nullable: true })
   lastLoginAt: Date | null;
 
+  @Column({ type: 'uuid', nullable: true, name: 'avatar_file_id' })
+  avatarFileId: string | null;
+
+  @Column({ type: 'integer', name: 'trash_retention_days', default: 30 })
+  trashRetentionDays: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

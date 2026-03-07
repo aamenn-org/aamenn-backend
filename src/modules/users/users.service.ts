@@ -175,6 +175,14 @@ export class UsersService {
       user.displayName = dto.displayName;
     }
 
+    if (dto.avatarFileId !== undefined) {
+      user.avatarFileId = dto.avatarFileId;
+    }
+
+    if (dto.trashRetentionDays !== undefined) {
+      user.trashRetentionDays = dto.trashRetentionDays;
+    }
+
     return this.usersRepository.save(user);
   }
 

@@ -84,7 +84,9 @@ export class UsersController {
       displayName: user.displayName,
       hasSecuritySetup,
       authProvider: user.authProvider,
+      avatarFileId: user.avatarFileId,
       createdAt: user.createdAt,
+      trashRetentionDays: user.trashRetentionDays,
     };
   }
 
@@ -111,6 +113,7 @@ export class UsersController {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
+      avatarFileId: user.avatarFileId,
       updatedAt: user.updatedAt,
     };
   }

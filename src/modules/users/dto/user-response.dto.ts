@@ -31,6 +31,13 @@ export class CurrentUserResponseDto {
   })
   authProvider?: string | null;
 
+  @ApiPropertyOptional({
+    description: 'UUID of the encrypted avatar file (from the files table)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    nullable: true,
+  })
+  avatarFileId?: string | null;
+
   @ApiProperty({
     description: 'Whether user has set up security parameters',
     example: true,
@@ -42,6 +49,12 @@ export class CurrentUserResponseDto {
     example: '2024-01-15T10:30:00.000Z',
   })
   createdAt: Date;
+
+  @ApiProperty({
+    description: 'Number of days to retain files in trash before automatic permanent deletion',
+    example: 30,
+  })
+  trashRetentionDays: number;
 }
 
 /**
