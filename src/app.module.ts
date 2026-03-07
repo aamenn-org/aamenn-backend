@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 
 import { AuthModule } from './modules/auth/auth.module';
@@ -12,6 +13,7 @@ import { StorageModule } from './modules/storage/storage.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CacheModule } from './modules/cache/cache.module';
 import { MailModule } from './modules/mail/mail.module';
+import { SharesModule } from './modules/shares/shares.module';
 
 import { User } from './database/entities/user.entity';
 import { UserSecurity } from './database/entities/user-security.entity';
@@ -20,6 +22,7 @@ import { Album } from './database/entities/album.entity';
 import { AlbumFile } from './database/entities/album-file.entity';
 import { DownloadLog } from './database/entities/download-log.entity';
 import { RefreshToken } from './database/entities/refresh-token.entity';
+import { ShareLink } from './database/entities/share-link.entity';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import {
@@ -80,7 +83,7 @@ import {
           username: configService.get<string>('DATABASE_USERNAME', 'postgres'),
           password: configService.get<string>('DATABASE_PASSWORD'),
           database: configService.get<string>('DATABASE_NAME', 'aamenn_vault'),
-          entities: [User, UserSecurity, File, Album, AlbumFile, DownloadLog, RefreshToken],
+          entities: [User, UserSecurity, File, Album, AlbumFile, DownloadLog, RefreshToken, ShareLink],
           synchronize, // Always false
           logging: nodeEnv === 'development' ? ['error', 'warn'] : false,
           ssl:
@@ -113,6 +116,9 @@ import {
       inject: [ConfigService],
     }),
 
+    // Scheduled tasks
+    ScheduleModule.forRoot(),
+
     // Feature modules
     CacheModule,
     MailModule,
@@ -122,6 +128,7 @@ import {
     AlbumsModule,
     StorageModule,
     AdminModule,
+    SharesModule,
   ],
   providers: [
     // Global rate limiting guard

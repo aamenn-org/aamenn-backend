@@ -248,10 +248,10 @@ export class AdminService {
     const { page = 1, limit = 20, search, sortBy, sortOrder } = query;
     const skip = (page - 1) * limit;
 
-    // Build base query
+    // Build base query - Fix the JOIN condition
     const queryBuilder = this.usersRepository
       .createQueryBuilder('user')
-      .leftJoin('user.files', 'file', 'file.deletedAt IS NULL')
+      .leftJoin('user.files', 'file')
       .select([
         'user.id',
         'user.email',
@@ -261,8 +261,8 @@ export class AdminService {
         'user.createdAt',
         'user.lastLoginAt',
       ])
-      .addSelect('COUNT(file.id)', 'fileCount')
-      .addSelect('COALESCE(SUM(file.sizeBytes), 0)', 'storageBytes')
+      .addSelect('COUNT(CASE WHEN file.deletedAt IS NULL THEN file.id END)', 'fileCount')
+      .addSelect('COALESCE(SUM(CASE WHEN file.deletedAt IS NULL THEN file.sizeBytes END), 0)', 'storageBytes')
       .where('user.role = :role', { role: UserRole.USER })
       .groupBy('user.id')
       .addGroupBy('user.email')
@@ -355,6 +355,60 @@ export class AdminService {
     }
 
     return this.usersRepository.save(user);
+  }
+
+  /**
+   * Permanently delete a user and ALL their data.
+   * Deletes all B2 files first, then removes the user record.
+   * DB cascades handle: files, albums, album_files, download_logs, refresh_tokens, user_security, share_links.
+   * Only regular users (role = 'user') can be deleted.
+   */
+  async deleteUser(userId: string): Promise<{ deletedFiles: number }> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      throw new Error('Cannot delete admin users');
+    }
+
+    // Fetch ALL files (including trashed) to delete from B2
+    const files = await this.filesRepository
+      .createQueryBuilder('file')
+      .where('file.userId = :userId', { userId })
+      .withDeleted()
+      .getMany();
+
+    // Delete all files from B2 in parallel (main + all thumbnails)
+    await Promise.all(
+      files.map(async (file) => {
+        try {
+          await this.b2StorageService.deleteFiles([
+            file.b2FilePath,
+            file.b2ThumbSmallPath,
+            file.b2ThumbMediumPath,
+            file.b2ThumbLargePath,
+          ]);
+        } catch (error) {
+          this.logger.error(
+            `Failed to delete B2 file ${file.id} for user ${userId}`,
+            error,
+          );
+          // Continue — don't block user deletion if B2 fails
+        }
+      }),
+    );
+
+    // Delete user — DB CASCADE handles all related records
+    await this.usersRepository.remove(user);
+
+    this.logger.log(
+      `Admin deleted user ${userId} (${user.email}) with ${files.length} files`,
+    );
+
+    return { deletedFiles: files.length };
   }
 
   /**

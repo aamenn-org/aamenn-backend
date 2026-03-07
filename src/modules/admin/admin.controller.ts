@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Delete,
   Param,
   Body,
   Query,
@@ -67,6 +68,31 @@ export class AdminController {
     return this.adminService.getUsers(query);
   }
 
+
+  /**
+   * Permanently delete a user and all their data (files, albums, B2 storage)
+   */
+  @Delete('users/:userId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Delete user and all their data',
+    description:
+      'Permanently deletes a user account, all their files from B2 storage, albums, and all associated database records. Only regular users can be deleted.',
+  })
+  @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'User deleted' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Cannot delete admin users' })
+  async deleteUser(@Param('userId', ParseUUIDPipe) userId: string) {
+    try {
+      return await this.adminService.deleteUser(userId);
+    } catch (error) {
+      if (error.message === 'User not found') {
+        throw new NotFoundException('User not found');
+      }
+      throw error;
+    }
+  }
 
   /**
    * Update user status (enable/disable)

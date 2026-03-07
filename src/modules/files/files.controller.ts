@@ -110,7 +110,7 @@ export class FilesController {
     
 **CRITICAL - True Zero-Knowledge Flow:**
 1. Client generates thumbnails from PLAINTEXT image (client-side only)
-2. Client encrypts: original file + 3 thumbnails (small/medium/large)
+2. Client encrypts: original file + 3 thumbnails (small/medium/large) with master key
 3. Client uploads ONLY encrypted blobs to this endpoint
 4. Backend proxies encrypted blobs to B2 storage
 5. Backend NEVER sees plaintext data at any stage
@@ -126,8 +126,8 @@ export class FilesController {
 - thumbSmall: Base64-encoded encrypted thumbnail (150x150)
 - thumbMedium: Base64-encoded encrypted thumbnail (800x800)
 - thumbLarge: Base64-encoded encrypted thumbnail (1600x1600)
-- cipherFileKey, cipherThumbSmallKey, cipherThumbMediumKey, cipherThumbLargeKey
-- blurhash, width, height (generated client-side from plaintext)
+- cipherFileKey
+- width, height (generated client-side from plaintext)
 
 **Size Limits (on encrypted data):**
 - thumbSmall: 500KB max
@@ -149,17 +149,13 @@ export class FilesController {
     @Body('cipherFileKey') cipherFileKey: string,
     @Body('mimeType') mimeType: string,
     @Body('sha1Hash') sha1Hash: string,
-    @Body('contentHash') contentHash?: string,
-    @Body('cipherThumbSmallKey') cipherThumbSmallKey?: string,
-    @Body('cipherThumbMediumKey') cipherThumbMediumKey?: string,
-    @Body('cipherThumbLargeKey') cipherThumbLargeKey?: string,
     @Body('thumbSmall') thumbSmallBase64?: string,
     @Body('thumbMedium') thumbMediumBase64?: string,
     @Body('thumbLarge') thumbLargeBase64?: string,
-    @Body('blurhash') blurhash?: string,
     @Body('width') width?: string,
     @Body('height') height?: string,
     @Body('duration') duration?: string,
+    @Body('contentHash') contentHash?: string,
   ) {
     if (!file) {
       throw new BadRequestException('No file uploaded');
@@ -173,16 +169,10 @@ export class FilesController {
       contentHash: contentHash || undefined,
     };
 
-    // Parse encrypted thumbnails from base64 if provided
-    let thumbnailData = undefined;
-    if (
-      thumbSmallBase64 &&
-      thumbMediumBase64 &&
-      thumbLargeBase64 &&
-      cipherThumbSmallKey &&
-      cipherThumbMediumKey &&
-      cipherThumbLargeKey
-    ) {
+    // Parse encrypted thumbnails from base64 (optional for media files)
+    let thumbnailData = null;
+    
+    if (thumbSmallBase64 && thumbMediumBase64 && thumbLargeBase64) {
       // Decode encrypted thumbnail blobs
       const thumbSmallBuffer = Buffer.from(thumbSmallBase64, 'base64');
       const thumbMediumBuffer = Buffer.from(thumbMediumBase64, 'base64');
@@ -210,13 +200,9 @@ export class FilesController {
       }
 
       thumbnailData = {
-        cipherThumbSmallKey,
-        cipherThumbMediumKey,
-        cipherThumbLargeKey,
         thumbSmallBuffer,
         thumbMediumBuffer,
         thumbLargeBuffer,
-        blurhash: blurhash || null,
         width: width ? parseInt(width, 10) : null,
         height: height ? parseInt(height, 10) : null,
         duration: duration ? parseInt(duration, 10) : null,
@@ -224,22 +210,13 @@ export class FilesController {
     }
 
     // Upload encrypted blobs - backend treats all data as opaque encrypted bytes
-    if (thumbnailData) {
-      return this.filesService.uploadFileWithThumbnails(
-        authUser.userId,
-        dto,
-        file.buffer,
-        sha1Hash,
-        thumbnailData,
-      );
-    } else {
-      return this.filesService.uploadFileProxy(
-        authUser.userId,
-        dto,
-        file.buffer,
-        sha1Hash,
-      );
-    }
+    return this.filesService.uploadFileWithThumbnails(
+      authUser.userId,
+      dto,
+      file.buffer,
+      sha1Hash,
+      thumbnailData,
+    );
   }
 
 
@@ -273,6 +250,24 @@ export class FilesController {
     const limitedIds = fileIds.slice(0, 25);
 
     return this.filesService.getFilesBatch(limitedIds, authUser.userId);
+  }
+
+  /**
+   * List files in trash.
+   */
+  @Get('trash')
+  @ApiOperation({
+    summary: 'List trash',
+    description: 'Returns paginated list of files in trash.',
+  })
+  async listTrash(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Query() query: ListFilesQueryDto,
+  ) {
+    return this.filesService.listTrash(authUser.userId, {
+      page: query.page,
+      limit: query.limit,
+    });
   }
 
   /**
@@ -385,15 +380,74 @@ Backend never decrypts file data.`,
   }
 
   /**
-   * Permanently delete a file.
-   * Removes file from B2 storage and database.
+   * Move multiple files to trash (bulk).
+   */
+  @Post('trash')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Move files to trash (bulk)',
+    description: 'Soft-deletes multiple files by moving them to trash.',
+  })
+  async moveToTrashBulk(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Body('fileIds') fileIds: string[],
+  ) {
+    return this.filesService.moveToTrashBulk(fileIds, authUser.userId);
+  }
+
+  /**
+   * Restore multiple files from trash (bulk).
+   */
+  @Post('restore')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Restore files from trash (bulk)',
+    description: 'Restores multiple files from trash to active state.',
+  })
+  async restoreFilesBulk(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Body('fileIds') fileIds: string[],
+  ) {
+    return this.filesService.restoreFilesBulk(fileIds, authUser.userId);
+  }
+
+  /**
+   * Permanently delete multiple files (bulk).
+   */
+  @Post('purge')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Permanently delete files (bulk)',
+    description: 'Permanently deletes multiple files. Cannot be undone.',
+  })
+  async purgeFiles(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Body('fileIds') fileIds: string[],
+  ) {
+    return this.filesService.deleteFilesPermanentlyBulk(fileIds, authUser.userId);
+  }
+
+  /**
+   * Empty trash - permanently delete all trashed files.
+   */
+  @Post('trash/empty')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Empty trash',
+    description: 'Permanently deletes all files in trash. Cannot be undone.',
+  })
+  async emptyTrash(@CurrentUser() authUser: AuthenticatedUser) {
+    return this.filesService.emptyTrash(authUser.userId);
+  }
+
+  /**
+   * Move file to trash (soft-delete).
    */
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Delete file permanently',
-    description:
-      'Permanently deletes a file. Removes from B2 storage and database.',
+    summary: 'Move file to trash',
+    description: 'Soft-deletes a file by moving it to trash. Can be restored later.',
   })
   @ApiParam({
     name: 'id',
@@ -402,24 +456,55 @@ Backend never decrypts file data.`,
   })
   @ApiResponse({
     status: HttpStatus.OK,
-    description: 'File deleted',
-    type: DeleteFileResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'File not found',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Access denied',
-    type: ErrorResponseDto,
+    description: 'File moved to trash',
   })
   async deleteFile(
     @CurrentUser() authUser: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) fileId: string,
-  ): Promise<DeleteFileResponseDto> {
-    return this.filesService.deleteFile(fileId, authUser.userId);
+  ) {
+    return this.filesService.moveToTrash(fileId, authUser.userId);
+  }
+
+  /**
+   * Restore a file from trash.
+   */
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Restore file from trash',
+    description: 'Restores a file from trash to active state.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'File UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  async restoreFile(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) fileId: string,
+  ) {
+    return this.filesService.restoreFile(fileId, authUser.userId);
+  }
+
+  /**
+   * Permanently delete a file.
+   */
+  @Delete(':id/permanent')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Permanently delete file',
+    description: 'Permanently deletes a file. Removes from B2 storage and database. Cannot be undone.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'File UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  async deleteFilePermanently(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) fileId: string,
+  ) {
+    return this.filesService.deleteFilePermanently(fileId, authUser.userId);
   }
 
 }
