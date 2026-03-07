@@ -21,12 +21,11 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - mail.host=smtp.gmail.com
-      - mail.port=587
-      - mail.user=yousseffaisal20@gmail.com
-      - mail.pass="opei zpbf fdcd hfgu"
-      - mail.from=yousseffaisal20@gmail.com
-      - VAULT_RESET_OTP_TTL_SECONDS=600
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=yousseffaisal20@gmail.com
+      - SMTP_PASS=opeizpbffdcdhfgu
+      - EMAIL_FROM=yousseffaisal20@gmail.com      - VAULT_RESET_OTP_TTL_SECONDS=600
       - VAULT_RESET_SESSION_TTL_SECONDS=900
       - CORS_ORIGIN=https://aamenn.com,https://www.aamenn.com
     depends_on:

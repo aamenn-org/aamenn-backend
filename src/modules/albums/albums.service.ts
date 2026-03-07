@@ -231,6 +231,7 @@ export class AlbumsService {
       duration: af.file.duration,
       isFavorite: af.file.isFavorite,
       thumbSmallUrl: af.file.b2ThumbSmallPath ? urlMap.get(af.file.b2ThumbSmallPath) || null : null,
+      cipherFileKey: af.file.cipherFileKey,
       orderIndex: af.orderIndex,
       createdAt: af.file.createdAt,
       updatedAt: af.file.updatedAt,
