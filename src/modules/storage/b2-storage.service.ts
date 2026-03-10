@@ -33,7 +33,13 @@ export class B2StorageService implements IStorageService, OnModuleInit {
   }
 
   async onModuleInit() {
-    await this.authorize();
+    try {
+      await this.authorize();
+    } catch (error) {
+      console.log('⚠️ B2 storage unavailable - daily limit reached or credentials issue');
+      console.log('📁 File upload features will be disabled until B2 is available');
+      // Don't throw error - let server continue without B2
+    }
   }
 
   /**
