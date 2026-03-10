@@ -9,11 +9,13 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { FilesModule } from './modules/files/files.module';
 import { AlbumsModule } from './modules/albums/albums.module';
+import { FoldersModule } from './modules/folders/folders.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { CacheModule } from './modules/cache/cache.module';
 import { MailModule } from './modules/mail/mail.module';
 import { SharesModule } from './modules/shares/shares.module';
+import { ContactsModule } from './modules/contacts/contacts.module';
 
 import { User } from './database/entities/user.entity';
 import { UserSecurity } from './database/entities/user-security.entity';
@@ -23,6 +25,8 @@ import { AlbumFile } from './database/entities/album-file.entity';
 import { DownloadLog } from './database/entities/download-log.entity';
 import { RefreshToken } from './database/entities/refresh-token.entity';
 import { ShareLink } from './database/entities/share-link.entity';
+import { Contact } from './database/entities/contact.entity';
+import { Folder } from './database/entities/folder.entity';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import {
@@ -83,7 +87,7 @@ import {
           username: configService.get<string>('DATABASE_USERNAME', 'postgres'),
           password: configService.get<string>('DATABASE_PASSWORD'),
           database: configService.get<string>('DATABASE_NAME', 'aamenn_vault'),
-          entities: [User, UserSecurity, File, Album, AlbumFile, DownloadLog, RefreshToken, ShareLink],
+          entities: [User, UserSecurity, File, Album, AlbumFile, DownloadLog, RefreshToken, ShareLink, Contact, Folder],
           synchronize, // Always false
           logging: nodeEnv === 'development' ? ['error', 'warn'] : false,
           ssl:
@@ -126,9 +130,11 @@ import {
     UsersModule,
     FilesModule,
     AlbumsModule,
+    FoldersModule,
     StorageModule,
     AdminModule,
     SharesModule,
+    ContactsModule,
   ],
   providers: [
     // Global rate limiting guard

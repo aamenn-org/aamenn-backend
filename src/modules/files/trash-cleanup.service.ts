@@ -5,6 +5,7 @@ import { Repository, LessThan } from 'typeorm';
 import { File } from '../../database/entities/file.entity';
 import { User } from '../../database/entities/user.entity';
 import { AlbumFile } from '../../database/entities/album-file.entity';
+import { Folder } from '../../database/entities/folder.entity';
 import { B2StorageService } from '../storage/b2-storage.service';
 
 @Injectable()
@@ -18,6 +19,8 @@ export class TrashCleanupService {
     private usersRepository: Repository<User>,
     @InjectRepository(AlbumFile)
     private albumFilesRepository: Repository<AlbumFile>,
+    @InjectRepository(Folder)
+    private foldersRepository: Repository<Folder>,
     private b2StorageService: B2StorageService,
   ) {}
 

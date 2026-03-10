@@ -22,4 +22,11 @@ export class UpdateFileDto {
   @IsOptional()
   @IsString()
   fileNameEncrypted?: string;
+
+  @ApiPropertyOptional({
+    description: 'Move file to a folder. Set to null to move to root.',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsOptional()
+  folderId?: string | null;
 }

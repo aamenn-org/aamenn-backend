@@ -6,11 +6,12 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, In } from 'typeorm';
 import { ShareLink, ShareResourceType } from '../../database/entities/share-link.entity';
 import { File } from '../../database/entities/file.entity';
 import { Album } from '../../database/entities/album.entity';
 import { AlbumFile } from '../../database/entities/album-file.entity';
+import { Folder } from '../../database/entities/folder.entity';
 import { B2StorageService } from '../storage/b2-storage.service';
 import { CreateShareItemDto } from './dto/create-share.dto';
 import { ShareLinkDto } from './dto/share-response.dto';
@@ -28,6 +29,8 @@ export class SharesService {
     private albumRepository: Repository<Album>,
     @InjectRepository(AlbumFile)
     private albumFileRepository: Repository<AlbumFile>,
+    @InjectRepository(Folder)
+    private foldersRepository: Repository<Folder>,
     private b2StorageService: B2StorageService,
   ) {}
 
@@ -53,6 +56,7 @@ export class SharesService {
         resourceType: item.type,
         resourceId: item.id,
         shareKey: item.shareKey,
+        metadata: item.fileKeys ? { fileKeys: item.fileKeys } : null,
         expiresAt,
       });
 
@@ -130,6 +134,7 @@ export class SharesService {
       resourceType: share.resourceType,
       resourceId: share.resourceId,
       shareKey: share.shareKey,
+      metadata: share.metadata,
     };
   }
 
@@ -245,6 +250,62 @@ export class SharesService {
     };
   }
 
+  async resolveFolderShare(resourceId: string) {
+    const folder = await this.foldersRepository.findOne({
+      where: { id: resourceId, deletedAt: IsNull() },
+    });
+
+    if (!folder) {
+      throw new NotFoundException('Folder not found or has been deleted');
+    }
+
+    // Get all files in folder and subfolders recursively
+    const descendantIds = await this.collectDescendantFolderIds(resourceId, folder.userId);
+    const allFolderIds = [resourceId, ...descendantIds];
+
+    const files = await this.fileRepository.find({
+      where: {
+        userId: folder.userId,
+        folderId: In(allFolderIds),
+        deletedAt: IsNull(),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    // Generate signed URLs for all files
+    const filesWithUrls = await Promise.all(
+      files.map(async (file) => {
+        const [downloadResult, thumbSmallResult] = await Promise.all([
+          this.b2StorageService.getSignedDownloadUrl(file.b2FilePath),
+          file.b2ThumbSmallPath
+            ? this.b2StorageService.getSignedDownloadUrl(file.b2ThumbSmallPath)
+            : Promise.resolve(null),
+        ]);
+
+        return {
+          fileId: file.id,
+          cipherFileKey: file.cipherFileKey,
+          fileNameEncrypted: file.fileNameEncrypted,
+          mimeType: file.mimeType,
+          sizeBytes: file.sizeBytes,
+          width: file.width,
+          height: file.height,
+          duration: file.duration,
+          downloadUrl: downloadResult.downloadUrl,
+          thumbSmallUrl: thumbSmallResult?.downloadUrl || null,
+          createdAt: file.createdAt,
+        };
+      }),
+    );
+
+    return {
+      folderId: folder.id,
+      nameEncrypted: folder.nameEncrypted,
+      files: filesWithUrls,
+      totalFiles: filesWithUrls.length,
+    };
+  }
+
   private async verifyOwnership(
     userId: string,
     resourceType: ShareResourceType,
@@ -272,6 +333,18 @@ export class SharesService {
       }
 
       if (album.userId !== userId) {
+        throw new ForbiddenException('Access denied');
+      }
+    } else if (resourceType === ShareResourceType.FOLDER) {
+      const folder = await this.foldersRepository.findOne({
+        where: { id: resourceId, deletedAt: IsNull() },
+      });
+
+      if (!folder) {
+        throw new NotFoundException('Folder not found');
+      }
+
+      if (folder.userId !== userId) {
         throw new ForbiddenException('Access denied');
       }
     }
@@ -324,5 +397,27 @@ export class SharesService {
     }
 
     return 'active';
+  }
+
+  private async collectDescendantFolderIds(
+    folderId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const result: string[] = [];
+    const queue: string[] = [folderId];
+
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      const children = await this.foldersRepository.find({
+        where: { userId, parentFolderId: currentId, deletedAt: IsNull() },
+      });
+
+      for (const child of children) {
+        result.push(child.id);
+        queue.push(child.id);
+      }
+    }
+
+    return result;
   }
 }

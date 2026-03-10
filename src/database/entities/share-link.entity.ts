@@ -13,6 +13,7 @@ import { User } from './user.entity';
 export enum ShareResourceType {
   FILE = 'file',
   ALBUM = 'album',
+  FOLDER = 'folder',
 }
 
 @Entity('share_links')
@@ -45,6 +46,9 @@ export class ShareLink {
 
   @Column({ type: 'text', name: 'share_key' })
   shareKey: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, any> | null;
 
   @Column({ type: 'timestamp', name: 'expires_at', nullable: true })
   expiresAt: Date | null;

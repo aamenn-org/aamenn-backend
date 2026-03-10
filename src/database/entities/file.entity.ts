@@ -12,9 +12,11 @@ import {
 } from 'typeorm';
 import { User } from './user.entity';
 import { AlbumFile } from './album-file.entity';
+import { Folder } from './folder.entity';
 
 @Entity('files')
 @Index(['userId', 'deletedAt'])
+@Index(['userId', 'folderId', 'deletedAt'])
 export class File {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -84,6 +86,12 @@ export class File {
   duration: number | null;
 
   /**
+   * Folder this file belongs to. NULL means root level.
+   */
+  @Column({ type: 'uuid', name: 'folder_id', nullable: true })
+  folderId: string | null;
+
+  /**
    * Whether this file is marked as favorite
    */
   @Column({ type: 'boolean', name: 'is_favorite', default: false })
@@ -112,6 +120,13 @@ export class File {
   @ManyToOne(() => User, (user) => user.files, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;
+
+  @ManyToOne(() => Folder, (folder) => folder.files, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'folder_id' })
+  folder: Folder | null;
 
   @OneToMany(() => AlbumFile, (albumFile) => albumFile.file)
   albumFiles: AlbumFile[];

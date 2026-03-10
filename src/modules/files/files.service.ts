@@ -218,6 +218,7 @@ export class FilesService {
       mimeType: dto.mimeType,
       sizeBytes: dto.sizeBytes,
       contentHash: dto.contentHash || null,
+      folderId: dto.folderId || null,
       b2ThumbSmallPath: thumbSmallPath,
       b2ThumbMediumPath: thumbMediumPath,
       b2ThumbLargePath: thumbLargePath,
@@ -476,14 +477,14 @@ export class FilesService {
    */
   async listFiles(
     userId: string,
-    options: { page?: number; limit?: number; favorite?: boolean } = {},
+    options: { page?: number; limit?: number; favorite?: boolean; folderId?: string } = {},
   ) {
-    const { page = 1, limit = 50, favorite } = options;
+    const { page = 1, limit = 50, favorite, folderId } = options;
     const skip = (page - 1) * limit;
 
     // Try cache for pagination snapshot (IDs only)
     const filesVer = await this.cacheService.getVersion(userId, 'files');
-    const cacheKey = `list:fav:${favorite || 0}:page:${page}:limit:${limit}:fv:${filesVer}`;
+    const cacheKey = `list:fav:${favorite || 0}:folder:${folderId || 'all'}:page:${page}:limit:${limit}:fv:${filesVer}`;
     
     const cachedSnapshot = await this.cacheService.get<{fileIds: string[], total: number}>(userId, 'files', cacheKey);
     if (cachedSnapshot) {
@@ -514,6 +515,11 @@ export class FilesService {
     const whereClause: any = { userId, deletedAt: IsNull() };
     if (favorite !== undefined) {
       whereClause.isFavorite = favorite;
+    }
+    if (folderId === 'root') {
+      whereClause.folderId = IsNull();
+    } else if (folderId) {
+      whereClause.folderId = folderId;
     }
     if (avatarFileId) {
       whereClause.id = Not(avatarFileId);
@@ -654,7 +660,7 @@ export class FilesService {
   async updateFile(
     fileId: string,
     userId: string,
-    updates: { isFavorite?: boolean; fileNameEncrypted?: string },
+    updates: { isFavorite?: boolean; fileNameEncrypted?: string; folderId?: string | null },
   ) {
     const file = await this.verifyFileOwnership(fileId, userId);
 
@@ -666,6 +672,10 @@ export class FilesService {
       file.fileNameEncrypted = updates.fileNameEncrypted;
     }
 
+    if (updates.folderId !== undefined) {
+      file.folderId = updates.folderId;
+    }
+
     await this.filesRepository.save(file);
 
     await this.cacheService.incrementVersion(userId, 'files');
@@ -674,6 +684,7 @@ export class FilesService {
       fileId: file.id,
       isFavorite: file.isFavorite,
       fileNameEncrypted: file.fileNameEncrypted,
+      folderId: file.folderId,
       updatedAt: file.updatedAt,
     };
   }

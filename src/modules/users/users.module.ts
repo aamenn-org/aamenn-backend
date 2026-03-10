@@ -5,6 +5,7 @@ import { UserSecurity } from '../../database/entities/user-security.entity';
 import { File } from '../../database/entities/file.entity';
 import { Album } from '../../database/entities/album.entity';
 import { AlbumFile } from '../../database/entities/album-file.entity';
+import { Folder } from '../../database/entities/folder.entity';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { FilesModule } from '../files/files.module';
@@ -13,7 +14,7 @@ import { VaultModule } from '../vault/vault.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, UserSecurity, File, Album, AlbumFile]),
+    TypeOrmModule.forFeature([User, UserSecurity, File, Album, AlbumFile, Folder]),
     FilesModule,
     VaultModule,
     forwardRef(() => StorageModule),

@@ -41,4 +41,11 @@ export class ListFilesQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   favorite?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Filter by folder ID. Use "root" for root-level files only.',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsOptional()
+  folderId?: string;
 }

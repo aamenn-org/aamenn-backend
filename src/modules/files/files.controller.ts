@@ -156,6 +156,7 @@ export class FilesController {
     @Body('height') height?: string,
     @Body('duration') duration?: string,
     @Body('contentHash') contentHash?: string,
+    @Body('folderId') folderId?: string,
   ) {
     if (!file) {
       throw new BadRequestException('No file uploaded');
@@ -167,6 +168,7 @@ export class FilesController {
       mimeType,
       sizeBytes: file.size,
       contentHash: contentHash || undefined,
+      folderId: folderId || undefined,
     };
 
     // Parse encrypted thumbnails from base64 (optional for media files)
@@ -340,6 +342,7 @@ Backend never decrypts file data.`,
       page: query.page,
       limit: query.limit,
       favorite: query.favorite,
+      folderId: query.folderId,
     });
   }
 
