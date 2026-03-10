@@ -10,6 +10,7 @@ import {
 import { UserSecurity } from './user-security.entity';
 import { File } from './file.entity';
 import { Album } from './album.entity';
+import { Folder } from './folder.entity';
 
 export enum UserRole {
   USER = 'user',
@@ -60,6 +61,15 @@ export class User {
   @Column({ type: 'integer', name: 'trash_retention_days', default: 30 })
   trashRetentionDays: number;
 
+  @Column({ type: 'text', nullable: true, name: 'google_access_token' })
+  googleAccessToken: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'google_refresh_token' })
+  googleRefreshToken: string | null;
+
+  @Column({ type: 'timestamp', nullable: true, name: 'google_token_expires_at' })
+  googleTokenExpiresAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
@@ -75,4 +85,7 @@ export class User {
 
   @OneToMany(() => Album, (album) => album.user)
   albums: Album[];
+
+  @OneToMany(() => Folder, (folder) => folder.user)
+  folders: Folder[];
 }

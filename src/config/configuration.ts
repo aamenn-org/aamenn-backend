@@ -45,6 +45,8 @@ export const storageConfig = registerAs('storage', () => ({
 export const googleConfig = registerAs('google', () => ({
   clientId: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  // For @react-oauth/google with auth-code flow, use 'postmessage' as redirect URI
+  redirectUri: process.env.GOOGLE_REDIRECT_URI || 'postmessage',
 }));
 
 export const mailConfig = registerAs('mail', () => ({

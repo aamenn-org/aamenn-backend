@@ -167,6 +167,16 @@ export class SharesController {
         shareKey: share.shareKey,
         data: fileData,
       };
+    } else if (share.resourceType === 'folder') {
+      const folderData = await this.sharesService.resolveFolderShare(
+        share.resourceId,
+      );
+      return {
+        type: 'folder',
+        shareKey: share.shareKey,
+        fileKeys: share.metadata?.fileKeys || {},
+        data: folderData,
+      };
     } else {
       const albumData = await this.sharesService.resolveAlbumShare(
         share.resourceId,

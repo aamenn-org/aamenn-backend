@@ -6,6 +6,7 @@ import { UserSecurity } from '../../database/entities/user-security.entity';
 import { File } from '../../database/entities/file.entity';
 import { Album } from '../../database/entities/album.entity';
 import { AlbumFile } from '../../database/entities/album-file.entity';
+import { Folder } from '../../database/entities/folder.entity';
 import { CreateUserSecurityDto } from './dto/create-user-security.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { B2StorageService } from '../storage/b2-storage.service';
@@ -35,6 +36,8 @@ export class UsersService {
     private albumsRepository: Repository<Album>,
     @InjectRepository(AlbumFile)
     private albumFilesRepository: Repository<AlbumFile>,
+    @InjectRepository(Folder)
+    private foldersRepository: Repository<Folder>,
     private b2StorageService: B2StorageService,
     private filesService: FilesService,
   ) {}
@@ -204,6 +207,42 @@ export class UsersService {
   }
 
   /**
+   * Update Google access token for user.
+   */
+  async updateGoogleAccessToken(
+    userId: string,
+    accessToken: string,
+  ): Promise<void> {
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1);
+
+    await this.usersRepository.update(userId, {
+      googleAccessToken: accessToken,
+      googleTokenExpiresAt: expiresAt,
+    });
+  }
+
+  /**
+   * Get Google access token for user if not expired.
+   */
+  async getGoogleAccessToken(userId: string): Promise<string | null> {
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      select: ['googleAccessToken', 'googleTokenExpiresAt'],
+    });
+
+    if (!user?.googleAccessToken || !user?.googleTokenExpiresAt) {
+      return null;
+    }
+
+    if (new Date() > user.googleTokenExpiresAt) {
+      return null;
+    }
+
+    return user.googleAccessToken;
+  }
+
+  /**
    * Delete user account and all associated data.
    * This includes: files from B2, albums, album_files, user_security, user.
    */
@@ -254,6 +293,9 @@ export class UsersService {
 
     // 5. Delete all albums
     await this.albumsRepository.delete({ userId });
+
+    // 5b. Delete all folders
+    await this.foldersRepository.delete({ userId });
 
     // 6. Delete user security
     await this.userSecurityRepository.delete({ userId });

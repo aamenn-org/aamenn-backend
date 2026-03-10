@@ -1,4 +1,4 @@
-import { IsArray, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsEnum, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { ShareResourceType } from '../../../database/entities/share-link.entity';
@@ -46,6 +46,14 @@ export class CreateShareItemDto {
   @IsNumber()
   @Min(60)
   expiresInSeconds?: number | null;
+
+  @ApiProperty({
+    description: 'Re-encrypted file keys for folder shares (fileId -> encrypted key)',
+    required: false,
+  })
+  @IsOptional()
+  @IsObject()
+  fileKeys?: Record<string, string>;
 }
 
 export class CreateSharesDto {

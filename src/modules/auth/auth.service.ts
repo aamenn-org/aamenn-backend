@@ -382,6 +382,11 @@ export class AuthService {
 
     await this.usersService.updateLastLogin(user.id);
 
+    // Store Google access token if provided (for contacts API access)
+    if (dto.accessToken) {
+      await this.usersService.updateGoogleAccessToken(user.id, dto.accessToken);
+    }
+
     // Send welcome email to new Google users (non-blocking)
     if (isNewUser) {
       this.mailService.sendWelcomeEmail(

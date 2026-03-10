@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class GoogleLoginDto {
@@ -9,4 +9,13 @@ export class GoogleLoginDto {
   @IsString()
   @IsNotEmpty()
   idToken: string;
+
+  @ApiProperty({
+    description: 'Google OAuth access token for API access (optional, for contacts sync)',
+    example: 'ya29.a0AfH6SMBx...',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  accessToken?: string;
 }
