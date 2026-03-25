@@ -34,7 +34,7 @@ export class ContactsService {
       const response = await people.people.connections.list({
         resourceName: 'people/me',
         personFields: 'names,nicknames,phoneNumbers,emailAddresses,addresses,organizations,occupations,birthdays,genders,biographies,relations,events,userDefined,photos,urls',
-        pageSize: 1000,
+        pageSize: 5000,
       });
 
       const connections = response.data.connections || [];
