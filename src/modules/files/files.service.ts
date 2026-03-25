@@ -426,190 +426,38 @@ export class FilesService {
   }
 
   /**
-   * Get file metadata and download URL.
-   * Verifies ownership before returning data.
+   * Helper method to generate file metadata with signed URLs.
+   * Used by multiple methods to avoid code duplication.
    */
-  async getFile(fileId: string, userId: string) {
-    const file = await this.filesRepository.findOne({
-      where: { id: fileId, deletedAt: IsNull() },
-    });
-
-    if (!file) {
-      throw new NotFoundException('File not found');
-    }
-
-    // Verify ownership
-    if (file.userId !== userId) {
-      // TODO: Check for shared access in future implementation
-      throw new ForbiddenException('Access denied');
-    }
-
-    // Skip files with missing cipherFileKey (corrupted data)
-    if (!file.cipherFileKey) {
-      this.logger.warn(`File ${file.id} has missing cipherFileKey - data corrupted`);
-      throw new NotFoundException('File data corrupted');
-    }
-
-    // Get signed download URL for original file
-    const { downloadUrl } = await this.b2StorageService.getSignedDownloadUrl(
-      file.b2FilePath,
-    );
-
-    // Get thumbnail URLs (optional for documents)
-    let thumbSmallResult = null;
-    let thumbMediumResult = null;
-    let thumbLargeResult = null;
-    
-    if (file.b2ThumbSmallPath && file.b2ThumbMediumPath && file.b2ThumbLargePath) {
-      [thumbSmallResult, thumbMediumResult, thumbLargeResult] = await Promise.all([
-        this.b2StorageService.getSignedDownloadUrl(file.b2ThumbSmallPath),
-        this.b2StorageService.getSignedDownloadUrl(file.b2ThumbMediumPath),
-        this.b2StorageService.getSignedDownloadUrl(file.b2ThumbLargePath),
-      ]);
-    }
-
-    const thumbSmallUrl = thumbSmallResult?.downloadUrl;
-    const thumbMediumUrl = thumbMediumResult?.downloadUrl;
-    const thumbLargeUrl = thumbLargeResult?.downloadUrl;
-
-    // Log download for bandwidth tracking (fire and forget)
-    this.logDownload(
-      userId,
-      file.id,
-      file.sizeBytes || 0,
-      DownloadType.ORIGINAL,
-    ).catch((err) =>
-      this.logger.warn(`Failed to log download: ${err.message}`),
-    );
-
-    return {
-      fileId: file.id,
-      cipherFileKey: file.cipherFileKey,
-      fileNameEncrypted: file.fileNameEncrypted,
-      mimeType: file.mimeType,
-      sizeBytes: file.sizeBytes,
-      width: file.width,
-      height: file.height,
-      duration: file.duration,
-      downloadUrl,
-      thumbSmallUrl,
-      thumbMediumUrl,
-      thumbLargeUrl,
-      createdAt: file.createdAt,
-      updatedAt: file.updatedAt,
-    };
-  }
-
-  /**
-   * List all files for a user.
-   * Returns metadata with blurhash and thumbnail keys for grid view.
-   * Includes signed URLs for small thumbnails.
-   */
-  async listFiles(
-    userId: string,
-    options: { page?: number; limit?: number; favorite?: boolean; folderId?: string } = {},
-  ) {
-    const { page = 1, limit = 50, favorite, folderId } = options;
-    const skip = (page - 1) * limit;
-
-    // Try cache for pagination snapshot (IDs only)
-    const filesVer = await this.cacheService.getVersion(userId, 'files');
-    const cacheKey = `list:fav:${favorite || 0}:folder:${folderId || 'all'}:page:${page}:limit:${limit}:fv:${filesVer}`;
-    
-    const cachedSnapshot = await this.cacheService.get<{fileIds: string[], total: number}>(userId, 'files', cacheKey);
-    if (cachedSnapshot) {
-      // Fetch full file data by IDs (still need to generate signed URLs)
-      // isAvatar=false ensures avatar files are never returned even if they
-      // somehow ended up in the snapshot (e.g. uploaded before migration)
-      const files = await this.filesRepository.find({
-        where: { id: In(cachedSnapshot.fileIds), userId, deletedAt: IsNull(), isAvatar: false },
-        order: { createdAt: 'DESC' },
-      });
-      
-      const filesWithUrls = await this.generateFilesWithUrls(files);
-      
-      return {
-        files: filesWithUrls,
-        pagination: {
-          page,
-          limit,
-          total: cachedSnapshot.total,
-          totalPages: Math.ceil(cachedSnapshot.total / limit),
-        },
-      };
-    }
-
-    // Cache miss - query database
-    // Exclude avatar files from the gallery listing via the isAvatar flag
-    const whereClause: any = { userId, deletedAt: IsNull(), isAvatar: false };
-    if (favorite !== undefined) {
-      whereClause.isFavorite = favorite;
-    }
-    if (folderId === 'root') {
-      whereClause.folderId = IsNull();
-    } else if (folderId) {
-      whereClause.folderId = folderId;
-    }
-
-    const [files, total] = await this.filesRepository.findAndCount({
-      where: whereClause,
-      order: { createdAt: 'DESC' },
-      skip,
-      take: limit,
-    });
-
-    // Cache pagination snapshot (IDs only, no URLs)
-    const snapshot = {
-      fileIds: files.map(f => f.id),
-      total,
-    };
-    await this.cacheService.set(userId, 'files', cacheKey, snapshot);
-
-    const filesWithUrls = await this.generateFilesWithUrls(files);
-
-    return {
-      files: filesWithUrls,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
-  }
-
   private async generateFilesWithUrls(files: File[]) {
-    // Get signed URLs for small thumbnails in parallel
-    return Promise.all(
+    // Get signed URLs for small thumbnails (for grid view)
+    return await Promise.all(
       files.map(async (file) => {
-        let thumbSmallUrl: string | null = null;
-
-        // Fetch thumbnail URL only if thumbnail exists
-        try {
-          if (file.b2ThumbSmallPath) {
-            const result = await this.b2StorageService.getSignedDownloadUrl(
-              file.b2ThumbSmallPath,
-            );
-            thumbSmallUrl = result.downloadUrl;
-          }
-        } catch (error) {
-          this.logger.warn(
-            `Failed to get thumbnail URL for file ${file.id}:`,
-            error,
+        let thumbSmallUrl = null;
+        if (file.b2ThumbSmallPath) {
+          const { downloadUrl } = await this.b2StorageService.getSignedDownloadUrl(
+            file.b2ThumbSmallPath,
           );
+          thumbSmallUrl = downloadUrl;
         }
 
         return {
-          fileId: file.id,
-          cipherFileKey: file.cipherFileKey,
+          id: file.id,
           fileNameEncrypted: file.fileNameEncrypted,
+          cipherFileKey: file.cipherFileKey,
           mimeType: file.mimeType,
           sizeBytes: file.sizeBytes,
+          contentHash: file.contentHash,
+          b2ThumbSmallPath: file.b2ThumbSmallPath,
+          b2ThumbMediumPath: file.b2ThumbMediumPath,
+          b2ThumbLargePath: file.b2ThumbLargePath,
+          thumbSmallUrl,
           width: file.width,
           height: file.height,
           duration: file.duration,
           isFavorite: file.isFavorite,
-          thumbSmallUrl,
+          isAvatar: file.isAvatar,
+          folderId: file.folderId,
           createdAt: file.createdAt,
           updatedAt: file.updatedAt,
         };
@@ -787,30 +635,6 @@ export class FilesService {
         totalPages: Math.ceil(total / limit),
       },
     };
-  }
-
-  /**
-   * Restore a file from trash.
-   */
-  async restoreFile(fileId: string, userId: string) {
-    const file = await this.filesRepository
-      .createQueryBuilder('file')
-      .where('file.id = :fileId', { fileId })
-      .andWhere('file.userId = :userId', { userId })
-      .andWhere('file.deleted_at IS NOT NULL')
-      .withDeleted()
-      .getOne();
-
-    if (!file) {
-      throw new NotFoundException('File not found in trash');
-    }
-
-    await this.filesRepository.restore({ id: fileId, userId });
-
-    await this.cacheService.incrementVersion(userId, 'files');
-    await this.cacheService.incrementVersion(userId, 'albums');
-
-    return { success: true, message: 'File restored' };
   }
 
   /**

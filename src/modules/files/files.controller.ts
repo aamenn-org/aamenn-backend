@@ -273,79 +273,7 @@ export class FilesController {
     });
   }
 
-  /**
-   * Get file metadata and signed download URL.
-   *
-   * Client workflow:
-   * 1. Call this endpoint
-   * 2. Download encrypted file from B2 using returned URL
-   * 3. Decrypt file locally using cipherFileKey
-   */
-  @Get(':id')
-  @ApiOperation({
-    summary: 'Get file',
-    description: `Returns file metadata and a signed download URL.
-    
-**Zero-Knowledge Flow:**
-1. Client calls this endpoint
-2. Backend returns encrypted metadata + signed download URL
-3. Client downloads encrypted file from B2
-4. Client decrypts file locally using the cipherFileKey
 
-Backend never decrypts file data.`,
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'File UUID',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'File metadata and download URL',
-    type: GetFileResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'File not found',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Access denied',
-    type: ErrorResponseDto,
-  })
-  async getFile(
-    @CurrentUser() authUser: AuthenticatedUser,
-    @Param('id', ParseUUIDPipe) fileId: string,
-  ): Promise<GetFileResponseDto> {
-    return this.filesService.getFile(fileId, authUser.userId);
-  }
-
-  /**
-   * List user's files with pagination and optional filters.
-   */
-  @Get()
-  @ApiOperation({
-    summary: 'List files',
-    description:
-      'Returns paginated list of user files with encrypted metadata. Use ?favorite=true to list only favorites.',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Paginated list of files',
-    type: ListFilesResponseDto,
-  })
-  async listFiles(
-    @CurrentUser() authUser: AuthenticatedUser,
-    @Query() query: ListFilesQueryDto,
-  ): Promise<ListFilesResponseDto> {
-    return this.filesService.listFiles(authUser.userId, {
-      page: query.page,
-      limit: query.limit,
-      favorite: query.favorite,
-      folderId: query.folderId,
-    });
-  }
 
   /**
    * Update file properties (e.g., favorite status).
@@ -469,46 +397,6 @@ Backend never decrypts file data.`,
     return this.filesService.moveToTrash(fileId, authUser.userId);
   }
 
-  /**
-   * Restore a file from trash.
-   */
-  @Post(':id/restore')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Restore file from trash',
-    description: 'Restores a file from trash to active state.',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'File UUID',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  async restoreFile(
-    @CurrentUser() authUser: AuthenticatedUser,
-    @Param('id', ParseUUIDPipe) fileId: string,
-  ) {
-    return this.filesService.restoreFile(fileId, authUser.userId);
-  }
 
-  /**
-   * Permanently delete a file.
-   */
-  @Delete(':id/permanent')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Permanently delete file',
-    description: 'Permanently deletes a file. Removes from B2 storage and database. Cannot be undone.',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'File UUID',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  async deleteFilePermanently(
-    @CurrentUser() authUser: AuthenticatedUser,
-    @Param('id', ParseUUIDPipe) fileId: string,
-  ) {
-    return this.filesService.deleteFilePermanently(fileId, authUser.userId);
-  }
 
 }
