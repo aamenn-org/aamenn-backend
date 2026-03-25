@@ -6,9 +6,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Repository, IsNull, In, Not } from 'typeorm';
+import { Repository, IsNull, In } from 'typeorm';
 import { File } from '../../database/entities/file.entity';
-import { User } from '../../database/entities/user.entity';
 import { AlbumFile } from '../../database/entities/album-file.entity';
 import {
   DownloadLog,
@@ -43,8 +42,6 @@ export class FilesService {
   constructor(
     @InjectRepository(File)
     private filesRepository: Repository<File>,
-    @InjectRepository(User)
-    private usersRepository: Repository<User>,
     @InjectRepository(AlbumFile)
     private albumFilesRepository: Repository<AlbumFile>,
     @InjectRepository(DownloadLog)
@@ -56,6 +53,39 @@ export class FilesService {
     // CRITICAL: ThumbnailService removed - backend NEVER processes plaintext images
     // All thumbnails must be generated and encrypted client-side
     this.logger.log(`B2 upload concurrency limit: ${this.uploadLimit.concurrency}`);
+  }
+
+  /**
+   * Upload an encrypted avatar file.
+   * Stores the file with isAvatar=true so it is excluded from gallery/folder listings.
+   * Returns fileId and a signed download URL for immediate display.
+   */
+  async uploadAvatar(
+    userId: string,
+    dto: InitiateUploadDto,
+    fileBuffer: Buffer,
+    sha1Hash: string,
+  ): Promise<{ fileId: string; downloadUrl: string }> {
+    const b2FilePath = this.b2StorageService.generateFilePath(userId);
+
+    await this.b2StorageService.uploadFile(b2FilePath, fileBuffer, sha1Hash);
+
+    const file = this.filesRepository.create({
+      userId,
+      b2FilePath,
+      cipherFileKey: dto.cipherFileKey,
+      fileNameEncrypted: dto.fileNameEncrypted,
+      mimeType: dto.mimeType,
+      sizeBytes: dto.sizeBytes,
+      isAvatar: true,
+      folderId: null,
+    });
+
+    await this.filesRepository.save(file);
+
+    const { downloadUrl } = await this.b2StorageService.getSignedDownloadUrl(b2FilePath);
+
+    return { fileId: file.id, downloadUrl };
   }
 
   /**
@@ -489,8 +519,10 @@ export class FilesService {
     const cachedSnapshot = await this.cacheService.get<{fileIds: string[], total: number}>(userId, 'files', cacheKey);
     if (cachedSnapshot) {
       // Fetch full file data by IDs (still need to generate signed URLs)
+      // isAvatar=false ensures avatar files are never returned even if they
+      // somehow ended up in the snapshot (e.g. uploaded before migration)
       const files = await this.filesRepository.find({
-        where: { id: In(cachedSnapshot.fileIds), userId, deletedAt: IsNull() },
+        where: { id: In(cachedSnapshot.fileIds), userId, deletedAt: IsNull(), isAvatar: false },
         order: { createdAt: 'DESC' },
       });
       
@@ -508,11 +540,8 @@ export class FilesService {
     }
 
     // Cache miss - query database
-    // Exclude the user's avatar file from the gallery listing
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
-    const avatarFileId = user?.avatarFileId;
-
-    const whereClause: any = { userId, deletedAt: IsNull() };
+    // Exclude avatar files from the gallery listing via the isAvatar flag
+    const whereClause: any = { userId, deletedAt: IsNull(), isAvatar: false };
     if (favorite !== undefined) {
       whereClause.isFavorite = favorite;
     }
@@ -520,9 +549,6 @@ export class FilesService {
       whereClause.folderId = IsNull();
     } else if (folderId) {
       whereClause.folderId = folderId;
-    }
-    if (avatarFileId) {
-      whereClause.id = Not(avatarFileId);
     }
 
     const [files, total] = await this.filesRepository.findAndCount({

@@ -18,8 +18,8 @@ export const jwtConfig = registerAs('jwt', () => ({
   secret: process.env.JWT_SECRET,
   issuer: process.env.JWT_ISSUER || 'aamenn',
   audience: process.env.JWT_AUDIENCE,
-  accessTokenExpiration: process.env.JWT_ACCESS_EXPIRATION || '15m',
-  refreshTokenExpiration: process.env.JWT_REFRESH_EXPIRATION || '7d',
+  accessTokenExpiration: process.env.JWT_ACCESS_EXPIRATION || '90m',
+  refreshTokenExpiration: process.env.JWT_REFRESH_EXPIRATION || '30d',
 }));
 
 export const b2Config = registerAs('b2', () => ({
