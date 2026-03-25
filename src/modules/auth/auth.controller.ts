@@ -27,7 +27,6 @@ import {
   AuthResponseDto,
   RegisterResponseDto,
   ChangePasswordDto,
-  LogoutDto,
   GoogleLoginDto,
   VaultResetRequestDto,
   VaultResetVerifyDto,
@@ -154,46 +153,6 @@ Server NEVER sees the plaintext master key.`,
     return this.authService.refresh(dto);
   }
 
-  @Post('logout')
-  @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth('JWT-auth')
-  @ApiOperation({
-    summary: 'Logout (revoke refresh token)',
-    description: 'Revoke the provided refresh token to logout from current session',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Successfully logged out',
-  })
-  async logout(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: LogoutDto,
-  ) {
-    await this.authService.logout(user.userId, dto.refreshToken);
-    return {
-      success: true,
-      message: 'Successfully logged out',
-    };
-  }
-
-  @Post('logout-all')
-  @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth('JWT-auth')
-  @ApiOperation({
-    summary: 'Logout from all sessions',
-    description: 'Revoke all refresh tokens for the authenticated user',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Successfully logged out from all sessions',
-  })
-  async logoutAll(@CurrentUser() user: AuthenticatedUser) {
-    await this.authService.logoutAll(user.userId);
-    return {
-      success: true,
-      message: 'Successfully logged out from all sessions',
-    };
-  }
 
   @Post('google')
   @Public()
@@ -270,14 +229,4 @@ Server NEVER sees the plaintext master key.`,
     return { success: true, message: 'Vault password reset successfully. Please login again.' };
   }
 
-  // DEBUG: Test email endpoint (remove in production)
-  @Post('debug-email')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Debug: Test email sending' })
-  async debugEmail(@Body() body: { email: string }) {
-    const otp = await this.authService['otpService'].generateOtp(body.email);
-    await this.authService['mailService'].sendOtpEmail(body.email, otp, this.authService['otpService'].getOtpTtlMinutes());
-    return { success: true, message: 'Test email sent', otp };
-  }
 }

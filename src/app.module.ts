@@ -8,7 +8,6 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { FilesModule } from './modules/files/files.module';
-import { AlbumsModule } from './modules/albums/albums.module';
 import { FoldersModule } from './modules/folders/folders.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { AdminModule } from './modules/admin/admin.module';
@@ -21,8 +20,6 @@ import { UploadsModule } from './modules/uploads/uploads.module';
 import { User } from './database/entities/user.entity';
 import { UserSecurity } from './database/entities/user-security.entity';
 import { File } from './database/entities/file.entity';
-import { Album } from './database/entities/album.entity';
-import { AlbumFile } from './database/entities/album-file.entity';
 import { DownloadLog } from './database/entities/download-log.entity';
 import { RefreshToken } from './database/entities/refresh-token.entity';
 import { ShareLink } from './database/entities/share-link.entity';
@@ -89,7 +86,7 @@ import {
           username: configService.get<string>('DATABASE_USERNAME', 'postgres'),
           password: configService.get<string>('DATABASE_PASSWORD'),
           database: configService.get<string>('DATABASE_NAME', 'aamenn_vault'),
-          entities: [User, UserSecurity, File, Album, AlbumFile, DownloadLog, RefreshToken, ShareLink, Contact, Folder, UploadSession],
+          entities: [User, UserSecurity, File, DownloadLog, RefreshToken, ShareLink, Contact, Folder, UploadSession],
           synchronize, // Always false
           logging: nodeEnv === 'development' ? ['error', 'warn'] : false,
           ssl:
@@ -131,7 +128,6 @@ import {
     AuthModule,
     UsersModule,
     FilesModule,
-    AlbumsModule,
     FoldersModule,
     StorageModule,
     AdminModule,

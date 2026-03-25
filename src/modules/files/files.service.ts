@@ -8,7 +8,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository, IsNull, In } from 'typeorm';
 import { File } from '../../database/entities/file.entity';
-import { AlbumFile } from '../../database/entities/album-file.entity';
 import {
   DownloadLog,
   DownloadType,
@@ -42,8 +41,6 @@ export class FilesService {
   constructor(
     @InjectRepository(File)
     private filesRepository: Repository<File>,
-    @InjectRepository(AlbumFile)
-    private albumFilesRepository: Repository<AlbumFile>,
     @InjectRepository(DownloadLog)
     private downloadLogsRepository: Repository<DownloadLog>,
     private b2StorageService: B2StorageService,
@@ -100,7 +97,6 @@ export class FilesService {
         contentHash,
         deletedAt: IsNull(),
       },
-      relations: ['albumFiles'],
     });
 
     if (!existingFile) {
@@ -111,10 +107,6 @@ export class FilesService {
       };
     }
 
-    // Check if the file is already in the target album
-    const inSameAlbum = albumId
-      ? existingFile.albumFiles?.some((af) => af.albumId === albumId)
-      : false;
 
     return {
       isDuplicate: true,
@@ -127,8 +119,6 @@ export class FilesService {
         height: existingFile.height,
         createdAt: existingFile.createdAt,
       },
-      inSameAlbum,
-      albumIds: existingFile.albumFiles?.map((af) => af.albumId) || [],
     };
   }
 
@@ -465,32 +455,6 @@ export class FilesService {
     );
   }
 
-  /**
-   * Remove a file from an album.
-   * Does not delete the file itself, only the album association.
-   * @param fileId - The file ID to remove
-   * @param userId - The user ID for ownership verification
-   * @param albumId - The album to remove the file from
-   */
-  async removeFileFromAlbum(fileId: string, userId: string, albumId: string) {
-    // Verify file exists and user owns it
-    await this.verifyFileOwnership(fileId, userId);
-
-    const albumFile = await this.albumFilesRepository.findOne({
-      where: { albumId, fileId },
-    });
-
-    if (!albumFile) {
-      throw new NotFoundException('File not found in album');
-    }
-
-    await this.albumFilesRepository.remove(albumFile);
-
-    return {
-      success: true,
-      message: 'File removed from album',
-    };
-  }
 
   /**
    * Check if a file exists and belongs to the user.
@@ -574,7 +538,6 @@ export class FilesService {
     await this.filesRepository.softDelete({ id: fileId, userId });
 
     await this.cacheService.incrementVersion(userId, 'files');
-    await this.cacheService.incrementVersion(userId, 'albums');
 
     return { success: true, message: 'File moved to trash' };
   }
@@ -599,7 +562,6 @@ export class FilesService {
     await this.filesRepository.softDelete({ id: In(fileIds), userId });
 
     await this.cacheService.incrementVersion(userId, 'files');
-    await this.cacheService.incrementVersion(userId, 'albums');
 
     return { success: true, count };
   }
@@ -658,7 +620,6 @@ export class FilesService {
     await this.filesRepository.restore({ id: In(fileIds), userId });
 
     await this.cacheService.incrementVersion(userId, 'files');
-    await this.cacheService.incrementVersion(userId, 'albums');
 
     return { success: true, count };
   }
@@ -692,14 +653,11 @@ export class FilesService {
       // Continue with database deletion even if B2 fails
     }
 
-    // Remove from all albums
-    await this.albumFilesRepository.delete({ fileId });
 
     // Permanently delete from database
     await this.filesRepository.remove(file);
 
     await this.cacheService.incrementVersion(userId, 'files');
-    await this.cacheService.incrementVersion(userId, 'albums');
 
     return { success: true, message: 'File permanently deleted' };
   }
@@ -737,14 +695,11 @@ export class FilesService {
       }),
     );
 
-    // Remove album associations
-    await this.albumFilesRepository.delete({ fileId: In(fileIds) });
 
     // Remove from database
     await this.filesRepository.remove(files);
 
     await this.cacheService.incrementVersion(userId, 'files');
-    await this.cacheService.incrementVersion(userId, 'albums');
 
     return { success: true, count: files.length };
   }
