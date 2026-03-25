@@ -11,7 +11,6 @@ import {
   Index,
 } from 'typeorm';
 import { User } from './user.entity';
-import { AlbumFile } from './album-file.entity';
 import { Folder } from './folder.entity';
 
 @Entity('files')
@@ -136,6 +135,4 @@ export class File {
   @JoinColumn({ name: 'folder_id' })
   folder: Folder | null;
 
-  @OneToMany(() => AlbumFile, (albumFile) => albumFile.file)
-  albumFiles: AlbumFile[];
 }

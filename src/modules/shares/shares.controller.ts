@@ -29,7 +29,6 @@ import {
   ListSharesResponseDto,
   RevokeShareResponseDto,
   ResolveShareFileResponseDto,
-  ResolveShareAlbumResponseDto,
 } from './dto/share-response.dto';
 import { ErrorResponseDto } from '../../common/dto';
 
@@ -43,7 +42,7 @@ export class SharesController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create share links',
-    description: 'Create public share links for files or albums. Supports bulk creation.',
+    description: 'Create public share links for files or folders. Supports bulk creation.',
   })
   @ApiResponse({
     status: HttpStatus.CREATED,
@@ -127,7 +126,7 @@ export class SharesController {
   @Public()
   @ApiOperation({
     summary: 'Resolve share link (public)',
-    description: `Resolve a public share link by slug. Returns file or album data with encrypted metadata.
+    description: `Resolve a public share link by slug. Returns file or folder data with encrypted metadata.
     
 **Public Access:**
 - No authentication required
@@ -176,17 +175,6 @@ export class SharesController {
         shareKey: share.shareKey,
         fileKeys: share.metadata?.fileKeys || {},
         data: folderData,
-      };
-    } else {
-      const albumData = await this.sharesService.resolveAlbumShare(
-        share.resourceId,
-        page,
-        limit,
-      );
-      return {
-        type: 'album',
-        shareKey: share.shareKey,
-        data: albumData,
       };
     }
   }

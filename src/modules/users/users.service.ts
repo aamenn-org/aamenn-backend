@@ -4,8 +4,6 @@ import { Repository, In } from 'typeorm';
 import { User } from '../../database/entities/user.entity';
 import { UserSecurity } from '../../database/entities/user-security.entity';
 import { File } from '../../database/entities/file.entity';
-import { Album } from '../../database/entities/album.entity';
-import { AlbumFile } from '../../database/entities/album-file.entity';
 import { Folder } from '../../database/entities/folder.entity';
 import { UploadSession } from '../../database/entities/upload-session.entity';
 import { CreateUserSecurityDto } from './dto/create-user-security.dto';
@@ -33,10 +31,6 @@ export class UsersService {
     private userSecurityRepository: Repository<UserSecurity>,
     @InjectRepository(File)
     private filesRepository: Repository<File>,
-    @InjectRepository(Album)
-    private albumsRepository: Repository<Album>,
-    @InjectRepository(AlbumFile)
-    private albumFilesRepository: Repository<AlbumFile>,
     @InjectRepository(Folder)
     private foldersRepository: Repository<Folder>,
     @InjectRepository(UploadSession)
@@ -247,7 +241,7 @@ export class UsersService {
 
   /**
    * Delete user account and all associated data.
-   * This includes: files from B2, albums, album_files, user_security, user.
+   * This includes: files from B2, folders, user_security, user.
    */
   async deleteAccount(userId: string): Promise<void> {
     this.logger.log(`Deleting account for user: ${userId}`);
@@ -278,26 +272,10 @@ export class UsersService {
       }
     }
 
-    // 3. Delete all album_files records (delete by finding files first)
-    const userFiles = await this.filesRepository.find({
-      where: { userId },
-      select: ['id'],
-    });
-    
-    if (userFiles.length > 0) {
-      const fileIds = userFiles.map(f => f.id);
-      await this.albumFilesRepository.delete({
-        fileId: In(fileIds),
-      });
-    }
-
-    // 4. Delete all files from database
+    // 3. Delete all files from database
     await this.filesRepository.delete({ userId });
 
-    // 5. Delete all albums
-    await this.albumsRepository.delete({ userId });
-
-    // 5b. Delete all folders
+    // 4. Delete all folders
     await this.foldersRepository.delete({ userId });
 
     // 5c. Cancel and delete all upload sessions

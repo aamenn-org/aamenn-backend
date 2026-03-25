@@ -3,8 +3,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../../database/entities/user.entity';
 import { UserSecurity } from '../../database/entities/user-security.entity';
 import { File } from '../../database/entities/file.entity';
-import { Album } from '../../database/entities/album.entity';
-import { AlbumFile } from '../../database/entities/album-file.entity';
 import { Folder } from '../../database/entities/folder.entity';
 import { UploadSession } from '../../database/entities/upload-session.entity';
 import { UsersService } from './users.service';
@@ -15,7 +13,7 @@ import { VaultModule } from '../vault/vault.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, UserSecurity, File, Album, AlbumFile, Folder, UploadSession]),
+    TypeOrmModule.forFeature([User, UserSecurity, File, Folder, UploadSession]),
     FilesModule,
     VaultModule,
     forwardRef(() => StorageModule),

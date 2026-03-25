@@ -4,7 +4,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import { File } from '../../database/entities/file.entity';
 import { User } from '../../database/entities/user.entity';
-import { AlbumFile } from '../../database/entities/album-file.entity';
 import { Folder } from '../../database/entities/folder.entity';
 import { B2StorageService } from '../storage/b2-storage.service';
 
@@ -17,8 +16,6 @@ export class TrashCleanupService {
     private filesRepository: Repository<File>,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
-    @InjectRepository(AlbumFile)
-    private albumFilesRepository: Repository<AlbumFile>,
     @InjectRepository(Folder)
     private foldersRepository: Repository<Folder>,
     private b2StorageService: B2StorageService,
@@ -108,14 +105,7 @@ export class TrashCleanupService {
       );
     }
 
-    // Remove album associations
-    const fileIds = expiredFiles.map((f) => f.id);
-    await this.albumFilesRepository
-      .createQueryBuilder()
-      .delete()
-      .where('file_id IN (:...fileIds)', { fileIds })
-      .execute();
-
+    
     // Remove from database
     await this.filesRepository.remove(expiredFiles);
 
