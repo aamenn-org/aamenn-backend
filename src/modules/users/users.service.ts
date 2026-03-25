@@ -7,6 +7,7 @@ import { File } from '../../database/entities/file.entity';
 import { Album } from '../../database/entities/album.entity';
 import { AlbumFile } from '../../database/entities/album-file.entity';
 import { Folder } from '../../database/entities/folder.entity';
+import { UploadSession } from '../../database/entities/upload-session.entity';
 import { CreateUserSecurityDto } from './dto/create-user-security.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { B2StorageService } from '../storage/b2-storage.service';
@@ -38,6 +39,8 @@ export class UsersService {
     private albumFilesRepository: Repository<AlbumFile>,
     @InjectRepository(Folder)
     private foldersRepository: Repository<Folder>,
+    @InjectRepository(UploadSession)
+    private uploadSessionsRepository: Repository<UploadSession>,
     private b2StorageService: B2StorageService,
     private filesService: FilesService,
   ) {}
@@ -296,6 +299,19 @@ export class UsersService {
 
     // 5b. Delete all folders
     await this.foldersRepository.delete({ userId });
+
+    // 5c. Cancel and delete all upload sessions
+    const activeSessions = await this.uploadSessionsRepository.find({
+      where: { userId, status: 'active' as const },
+    });
+    for (const session of activeSessions) {
+      try {
+        await this.b2StorageService.cancelLargeFile(session.b2FileId);
+      } catch {
+        // Best effort — B2 may have already cleaned up
+      }
+    }
+    await this.uploadSessionsRepository.delete({ userId });
 
     // 6. Delete user security
     await this.userSecurityRepository.delete({ userId });

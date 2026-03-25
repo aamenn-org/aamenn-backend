@@ -99,7 +99,7 @@ export class FilesController {
   @UseInterceptors(
     FileInterceptor('file', {
       limits: {
-        fileSize: 500 * 1024 * 1024, // 500MB max encrypted file size
+        fileSize: 2 * 1024 * 1024 * 1024, // 2GB max encrypted file size
         fieldSize: 10 * 1024 * 1024, // 10MB max field size (for base64 encrypted thumbnails)
       },
     }),
@@ -130,6 +130,7 @@ export class FilesController {
 - width, height (generated client-side from plaintext)
 
 **Size Limits (on encrypted data):**
+- Main file: 2GB max
 - thumbSmall: 500KB max
 - thumbMedium: 2MB max
 - thumbLarge: 10MB max`,

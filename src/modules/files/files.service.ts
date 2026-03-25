@@ -36,7 +36,7 @@ export class FilesService {
   // PERFORMANCE: Limit concurrent B2 uploads to prevent overwhelming the service
   // Max 5 concurrent uploads to B2 (configurable via env)
   private readonly uploadLimit = pLimit(
-    parseInt(process.env.B2_UPLOAD_CONCURRENCY || '5', 10)
+    parseInt(process.env.B2_UPLOAD_CONCURRENCY || '20', 10)
   );
 
   constructor(
