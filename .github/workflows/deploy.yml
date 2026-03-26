@@ -51,6 +51,10 @@ jobs:
               -e REDIS_PORT=6379 \
               -e REDIS_PASSWORD=redis-pass-keyword-987 \
               -e GOOGLE_CLIENT_ID=560785814040-9vmbfpta3jiqasqql3lrqfi7h8e94ppg.apps.googleusercontent.com \
+              -e JWT_ACCESS_EXPIRATION=90m \
+              -e JWT_REFRESH_EXPIRATION=30d \
+              -e STORAGE_LIMIT_GB=3 \
+              -e STORAGE_WARNING_THRESHOLD=80 \
               -e SMTP_HOST=smtp.gmail.com \
               -e SMTP_PORT=587 \
               -e SMTP_USER=yousseffaisal20@gmail.com \
