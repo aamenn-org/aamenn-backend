@@ -31,13 +31,8 @@ export class ContactsService {
         auth: oauth2Client 
       });
       
-      const response = await people.people.connections.list({
-        resourceName: 'people/me',
-        personFields: 'names,nicknames,phoneNumbers,emailAddresses,addresses,organizations,occupations,birthdays,genders,biographies,relations,events,userDefined,photos,urls',
-        pageSize: 1000,
-      });
-
-      const connections = response.data.connections || [];
+      // Fetch all contacts using pagination
+      const allConnections = await this.fetchAllGoogleContacts(people);
       
       // 🚨 SECURITY WARNING: Backend processes plaintext contact data!
       // TODO: Move this processing to client-side with master key encryption
@@ -45,12 +40,18 @@ export class ContactsService {
       
       // 🚨 NOT ZERO-KNOWLEDGE: Processing plaintext contacts on backend
       // TODO: Frontend should encrypt contacts before sending to backend
-      const contacts = this.processGoogleConnections(connections, userId);
+      const contacts = this.processGoogleConnections(allConnections, userId);
       
       if (contacts.length > 0) {
         // 🚨 SECURITY ISSUE: Storing plaintext contact data in database
         // TODO: Store only encrypted blobs from client-side encryption
-        await this.contactRepository.save(contacts);
+        
+        // Batch insert for better performance with large datasets
+        const batchSize = 500;
+        for (let i = 0; i < contacts.length; i += batchSize) {
+          const batch = contacts.slice(i, i + batchSize);
+          await this.contactRepository.save(batch);
+        }
       }
       
       return {
@@ -74,6 +75,30 @@ export class ContactsService {
       
       throw new BadRequestException('Failed to sync contacts. Please try again.');
     }
+  }
+
+  private async fetchAllGoogleContacts(people: any): Promise<any[]> {
+    const allConnections: any[] = [];
+    let pageToken: string | undefined = undefined;
+    const pageSize = 1000; // Google's maximum allowed pageSize
+
+    do {
+      const response: any = await people.people.connections.list({
+        resourceName: 'people/me',
+        personFields: 'names,nicknames,phoneNumbers,emailAddresses,addresses,organizations,occupations,birthdays,genders,biographies,relations,events,userDefined,photos,urls',
+        pageSize,
+        pageToken,
+      });
+
+      const connections = response.data.connections || [];
+      allConnections.push(...connections);
+
+      // Get next page token for pagination
+      pageToken = response.data.nextPageToken;
+
+    } while (pageToken); // Continue until no more pages
+
+    return allConnections;
   }
 
   private processGoogleConnections(connections: any[], userId: string) {

@@ -11,7 +11,6 @@ import {
   Index,
 } from 'typeorm';
 import { User } from './user.entity';
-import { AlbumFile } from './album-file.entity';
 import { Folder } from './folder.entity';
 
 @Entity('files')
@@ -98,6 +97,14 @@ export class File {
   isFavorite: boolean;
 
   /**
+   * Whether this file is a user avatar.
+   * Avatar files are excluded from gallery and folder listings.
+   * Uploaded via POST /users/me/avatar — never via the generic upload endpoint.
+   */
+  @Column({ type: 'boolean', name: 'is_avatar', default: false })
+  isAvatar: boolean;
+
+  /**
    * SHA-256 hash of the ORIGINAL file content (before encryption).
    * Used for duplicate detection. This is computed client-side.
    * While this reveals that two files have the same content, it doesn't
@@ -128,6 +135,4 @@ export class File {
   @JoinColumn({ name: 'folder_id' })
   folder: Folder | null;
 
-  @OneToMany(() => AlbumFile, (albumFile) => albumFile.file)
-  albumFiles: AlbumFile[];
 }

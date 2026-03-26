@@ -9,8 +9,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull, In } from 'typeorm';
 import { ShareLink, ShareResourceType } from '../../database/entities/share-link.entity';
 import { File } from '../../database/entities/file.entity';
-import { Album } from '../../database/entities/album.entity';
-import { AlbumFile } from '../../database/entities/album-file.entity';
 import { Folder } from '../../database/entities/folder.entity';
 import { B2StorageService } from '../storage/b2-storage.service';
 import { CreateShareItemDto } from './dto/create-share.dto';
@@ -25,10 +23,6 @@ export class SharesService {
     private shareLinkRepository: Repository<ShareLink>,
     @InjectRepository(File)
     private fileRepository: Repository<File>,
-    @InjectRepository(Album)
-    private albumRepository: Repository<Album>,
-    @InjectRepository(AlbumFile)
-    private albumFileRepository: Repository<AlbumFile>,
     @InjectRepository(Folder)
     private foldersRepository: Repository<Folder>,
     private b2StorageService: B2StorageService,
@@ -178,78 +172,6 @@ export class SharesService {
     };
   }
 
-  async resolveAlbumShare(
-    resourceId: string,
-    page: number,
-    limit: number,
-  ) {
-    const album = await this.albumRepository.findOne({
-      where: { id: resourceId },
-    });
-
-    if (!album) {
-      throw new NotFoundException('Album not found');
-    }
-
-    const skip = (page - 1) * limit;
-
-    const [albumFiles, total] = await this.albumFileRepository.findAndCount({
-      where: { albumId: resourceId },
-      relations: ['file'],
-      order: { orderIndex: 'ASC' },
-      skip,
-      take: limit,
-    });
-
-    const validAlbumFiles = albumFiles.filter(
-      (af) => af.file && !af.file.deletedAt,
-    );
-
-    const thumbnailPaths = validAlbumFiles
-      .filter((af) => af.file.b2ThumbSmallPath)
-      .map((af) => af.file.b2ThumbSmallPath!);
-
-    const signedUrlPromises = thumbnailPaths.map((path) =>
-      this.b2StorageService
-        .getSignedDownloadUrl(path)
-        .then((result) => ({ path, url: result.downloadUrl }))
-        .catch((error) => {
-          this.logger.warn(`Failed to get thumbnail URL for ${path}:`, error);
-          return { path, url: null };
-        }),
-    );
-
-    const signedUrls = await Promise.all(signedUrlPromises);
-    const urlMap = new Map(signedUrls.map((item) => [item.path, item.url]));
-
-    const filesWithUrls = validAlbumFiles.map((af) => ({
-      fileId: af.file.id,
-      fileNameEncrypted: af.file.fileNameEncrypted,
-      mimeType: af.file.mimeType,
-      sizeBytes: af.file.sizeBytes,
-      width: af.file.width,
-      height: af.file.height,
-      duration: af.file.duration,
-      thumbSmallUrl: af.file.b2ThumbSmallPath
-        ? urlMap.get(af.file.b2ThumbSmallPath) || null
-        : null,
-      orderIndex: af.orderIndex,
-      createdAt: af.file.createdAt,
-    }));
-
-    return {
-      albumId: album.id,
-      titleEncrypted: album.titleEncrypted,
-      files: filesWithUrls,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
-  }
-
   async resolveFolderShare(resourceId: string) {
     const folder = await this.foldersRepository.findOne({
       where: { id: resourceId, deletedAt: IsNull() },
@@ -321,18 +243,6 @@ export class SharesService {
       }
 
       if (file.userId !== userId) {
-        throw new ForbiddenException('Access denied');
-      }
-    } else if (resourceType === ShareResourceType.ALBUM) {
-      const album = await this.albumRepository.findOne({
-        where: { id: resourceId },
-      });
-
-      if (!album) {
-        throw new NotFoundException('Album not found');
-      }
-
-      if (album.userId !== userId) {
         throw new ForbiddenException('Access denied');
       }
     } else if (resourceType === ShareResourceType.FOLDER) {

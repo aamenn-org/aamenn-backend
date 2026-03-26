@@ -9,7 +9,6 @@ import {
 } from 'typeorm';
 import { UserSecurity } from './user-security.entity';
 import { File } from './file.entity';
-import { Album } from './album.entity';
 import { Folder } from './folder.entity';
 
 export enum UserRole {
@@ -83,8 +82,6 @@ export class User {
   @OneToMany(() => File, (file) => file.user)
   files: File[];
 
-  @OneToMany(() => Album, (album) => album.user)
-  albums: Album[];
 
   @OneToMany(() => Folder, (folder) => folder.user)
   folders: Folder[];

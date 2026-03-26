@@ -10,20 +10,27 @@ import {
   ConflictException,
   UnauthorizedException,
   ForbiddenException,
+  BadRequestException,
   Logger,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
   ApiResponse,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from './users.service';
+import { FilesService } from '../files/files.service';
 import { VaultSecurityService } from '../vault/vault-security.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
 import { CreateUserSecurityDto } from './dto/create-user-security.dto';
+import { InitiateUploadDto } from '../files/dto/initiate-upload.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
 import { ChangePasswordDto } from '../auth/dto/change-password.dto';
@@ -42,6 +49,7 @@ export class UsersController {
 
   constructor(
     private readonly usersService: UsersService,
+    private readonly filesService: FilesService,
     private readonly vaultSecurityService: VaultSecurityService,
   ) {}
 
@@ -115,6 +123,85 @@ export class UsersController {
       displayName: user.displayName,
       avatarFileId: user.avatarFileId,
       updatedAt: user.updatedAt,
+    };
+  }
+
+  /**
+   * Upload an encrypted avatar image.
+   * Stores the file with isAvatar=true so it never appears in gallery or folder views.
+   * Also updates the user's avatarFileId atomically.
+   * Old avatar file is permanently deleted from storage.
+   */
+  @Post('me/avatar')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB max for avatar
+      },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload avatar',
+    description: `Upload an encrypted avatar image. The file is stored with isAvatar=true and
+excluded from all gallery and folder listings. Updates avatarFileId on the user profile.`,
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Avatar uploaded and profile updated' })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Missing file or metadata' })
+  async uploadAvatar(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @UploadedFile() file: { buffer: Buffer; size: number; mimetype: string; originalname: string },
+    @Body('fileNameEncrypted') fileNameEncrypted: string,
+    @Body('cipherFileKey') cipherFileKey: string,
+    @Body('mimeType') mimeType: string,
+    @Body('sha1Hash') sha1Hash: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+    if (!fileNameEncrypted || !cipherFileKey || !mimeType || !sha1Hash) {
+      throw new BadRequestException('Missing required metadata fields');
+    }
+
+    const user = await this.usersService.findUser({ id: authUser.userId });
+    if (!user) {
+      throw new ConflictException('User not found');
+    }
+
+    const oldAvatarFileId = user.avatarFileId;
+
+    const dto: InitiateUploadDto = {
+      fileNameEncrypted,
+      cipherFileKey,
+      mimeType,
+      sizeBytes: file.size,
+    };
+
+    const { fileId, downloadUrl } = await this.filesService.uploadAvatar(
+      authUser.userId,
+      dto,
+      file.buffer,
+      sha1Hash,
+    );
+
+    const updatedUser = await this.usersService.updateProfile(authUser.userId, {
+      avatarFileId: fileId,
+    });
+
+    // Delete the old avatar file from storage (fire-and-forget, non-blocking)
+    if (oldAvatarFileId) {
+      this.filesService
+        .deleteFilePermanently(oldAvatarFileId, authUser.userId)
+        .catch((err: Error) =>
+          this.logger.warn(`Failed to delete old avatar ${oldAvatarFileId}: ${err.message}`),
+        );
+    }
+
+    return {
+      fileId,
+      downloadUrl,
+      avatarFileId: updatedUser.avatarFileId,
     };
   }
 

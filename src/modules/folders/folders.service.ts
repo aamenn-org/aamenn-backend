@@ -453,10 +453,11 @@ export class FoldersService {
       updatedAt: folder.updatedAt,
     }));
 
-    // Get child files (paginated)
+    // Get child files (paginated) — exclude avatar files from all folder views
     const fileWhere: any = {
       userId,
       deletedAt: IsNull(),
+      isAvatar: false,
     };
     fileWhere.folderId = folderId ? folderId : IsNull();
 
@@ -688,6 +689,7 @@ export class FoldersService {
       .where('f.folder_id IN (:...folderIds)', { folderIds })
       .andWhere('f.user_id = :userId', { userId })
       .andWhere('f.deleted_at IS NULL')
+      .andWhere('f.is_avatar = false')
       .groupBy('f.folder_id')
       .getRawMany();
 

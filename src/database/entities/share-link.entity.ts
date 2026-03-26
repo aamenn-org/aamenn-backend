@@ -12,7 +12,6 @@ import { User } from './user.entity';
 
 export enum ShareResourceType {
   FILE = 'file',
-  ALBUM = 'album',
   FOLDER = 'folder',
 }
 
