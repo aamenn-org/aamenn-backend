@@ -43,6 +43,28 @@ export class FilesController {
 
 
   /**
+   * List files with optional filtering and pagination.
+   */
+  @Get()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'List files',
+    description: 'Returns paginated list of files. Supports favorite filter and folder filter.',
+  })
+  @ApiResponse({ status: HttpStatus.OK, type: ListFilesResponseDto })
+  async listFiles(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Query() query: ListFilesQueryDto,
+  ) {
+    return this.filesService.listFiles(authUser.userId, {
+      page: query.page,
+      limit: query.limit,
+      favorite: query.favorite,
+      folderId: query.folderId,
+    });
+  }
+
+  /**
    * Check if a file with the given content hash already exists.
    * This is used for duplicate detection before uploading.
    *
@@ -253,6 +275,23 @@ export class FilesController {
     const limitedIds = fileIds.slice(0, 25);
 
     return this.filesService.getFilesBatch(limitedIds, authUser.userId);
+  }
+
+  /**
+   * Get single file metadata and download URL.
+   */
+  @Get(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get file', description: 'Get file metadata and signed download URL.' })
+  @ApiParam({ name: 'id', description: 'File UUID' })
+  @ApiResponse({ status: HttpStatus.OK, type: GetFileResponseDto })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, type: ErrorResponseDto })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, type: ErrorResponseDto })
+  async getFile(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) fileId: string,
+  ) {
+    return this.filesService.getFile(fileId, authUser.userId);
   }
 
   /**

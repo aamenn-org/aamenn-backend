@@ -416,38 +416,166 @@ export class FilesService {
   }
 
   /**
+   * List all files for a user.
+   * Returns metadata with blurhash and thumbnail keys for grid view.
+   * Includes signed URLs for small thumbnails.
+   */
+  async listFiles(
+    userId: string,
+    options: { page?: number; limit?: number; favorite?: boolean; folderId?: string } = {},
+  ) {
+    const { page = 1, limit = 50, favorite, folderId } = options;
+    const skip = (page - 1) * limit;
+
+    // Try cache for pagination snapshot (IDs only)
+    const filesVer = await this.cacheService.getVersion(userId, 'files');
+    const cacheKey = `list:fav:${favorite || 0}:folder:${folderId || 'all'}:page:${page}:limit:${limit}:fv:${filesVer}`;
+
+    const cachedSnapshot = await this.cacheService.get<{fileIds: string[], total: number}>(userId, 'files', cacheKey);
+    if (cachedSnapshot) {
+      const files = await this.filesRepository.find({
+        where: { id: In(cachedSnapshot.fileIds), userId, deletedAt: IsNull(), isAvatar: false },
+        order: { createdAt: 'DESC' },
+      });
+
+      const filesWithUrls = await this.generateFilesWithUrls(files);
+
+      return {
+        files: filesWithUrls,
+        pagination: {
+          page,
+          limit,
+          total: cachedSnapshot.total,
+          totalPages: Math.ceil(cachedSnapshot.total / limit),
+        },
+      };
+    }
+
+    const where: any = { userId, deletedAt: IsNull(), isAvatar: false };
+    if (favorite !== undefined) where.isFavorite = favorite;
+    if (folderId === 'root') {
+      where.folderId = IsNull();
+    } else if (folderId) {
+      where.folderId = folderId;
+    }
+
+    const [files, total] = await this.filesRepository.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      skip,
+      take: limit,
+    });
+
+    // Cache the snapshot (IDs + total)
+    await this.cacheService.set(userId, 'files', cacheKey, { fileIds: files.map(f => f.id), total });
+
+    const filesWithUrls = await this.generateFilesWithUrls(files);
+
+    return {
+      files: filesWithUrls,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasMore: page * limit < total,
+      },
+    };
+  }
+
+  /**
+   * Get file metadata and download URL.
+   * Verifies ownership before returning data.
+   */
+  async getFile(fileId: string, userId: string) {
+    const file = await this.filesRepository.findOne({
+      where: { id: fileId, deletedAt: IsNull() },
+    });
+
+    if (!file) {
+      throw new NotFoundException('File not found');
+    }
+
+    if (file.userId !== userId) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    if (!file.cipherFileKey) {
+      this.logger.warn(`File ${file.id} has missing cipherFileKey - data corrupted`);
+      throw new NotFoundException('File data corrupted');
+    }
+
+    const { downloadUrl } = await this.b2StorageService.getSignedDownloadUrl(file.b2FilePath);
+
+    let thumbSmallResult = null;
+    let thumbMediumResult = null;
+    let thumbLargeResult = null;
+
+    if (file.b2ThumbSmallPath && file.b2ThumbMediumPath && file.b2ThumbLargePath) {
+      [thumbSmallResult, thumbMediumResult, thumbLargeResult] = await Promise.all([
+        this.b2StorageService.getSignedDownloadUrl(file.b2ThumbSmallPath),
+        this.b2StorageService.getSignedDownloadUrl(file.b2ThumbMediumPath),
+        this.b2StorageService.getSignedDownloadUrl(file.b2ThumbLargePath),
+      ]);
+    }
+
+    this.logDownload(userId, file.id, file.sizeBytes || 0, DownloadType.ORIGINAL)
+      .catch((err) => this.logger.warn(`Failed to log download: ${err.message}`));
+
+    return {
+      fileId: file.id,
+      cipherFileKey: file.cipherFileKey,
+      fileNameEncrypted: file.fileNameEncrypted,
+      mimeType: file.mimeType,
+      sizeBytes: file.sizeBytes,
+      width: file.width,
+      height: file.height,
+      duration: file.duration,
+      downloadUrl,
+      thumbSmallUrl: thumbSmallResult?.downloadUrl ?? null,
+      thumbMediumUrl: thumbMediumResult?.downloadUrl ?? null,
+      thumbLargeUrl: thumbLargeResult?.downloadUrl ?? null,
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
+    };
+  }
+
+  /**
    * Helper method to generate file metadata with signed URLs.
    * Used by multiple methods to avoid code duplication.
    */
   private async generateFilesWithUrls(files: File[]) {
-    // Get signed URLs for small thumbnails (for grid view)
-    return await Promise.all(
+    // Get signed URLs for small thumbnails in parallel
+    return Promise.all(
       files.map(async (file) => {
-        let thumbSmallUrl = null;
-        if (file.b2ThumbSmallPath) {
-          const { downloadUrl } = await this.b2StorageService.getSignedDownloadUrl(
-            file.b2ThumbSmallPath,
+        let thumbSmallUrl: string | null = null;
+
+        try {
+          if (file.b2ThumbSmallPath) {
+            const result = await this.b2StorageService.getSignedDownloadUrl(
+              file.b2ThumbSmallPath,
+            );
+            thumbSmallUrl = result.downloadUrl;
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Failed to get thumbnail URL for file ${file.id}:`,
+            error,
           );
-          thumbSmallUrl = downloadUrl;
         }
 
         return {
-          id: file.id,
-          fileNameEncrypted: file.fileNameEncrypted,
+          fileId: file.id,
           cipherFileKey: file.cipherFileKey,
+          fileNameEncrypted: file.fileNameEncrypted,
           mimeType: file.mimeType,
           sizeBytes: file.sizeBytes,
-          contentHash: file.contentHash,
-          b2ThumbSmallPath: file.b2ThumbSmallPath,
-          b2ThumbMediumPath: file.b2ThumbMediumPath,
-          b2ThumbLargePath: file.b2ThumbLargePath,
-          thumbSmallUrl,
           width: file.width,
           height: file.height,
           duration: file.duration,
           isFavorite: file.isFavorite,
-          isAvatar: file.isAvatar,
           folderId: file.folderId,
+          thumbSmallUrl,
           createdAt: file.createdAt,
           updatedAt: file.updatedAt,
         };
