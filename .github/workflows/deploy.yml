@@ -53,7 +53,7 @@ jobs:
               -e GOOGLE_CLIENT_ID=560785814040-9vmbfpta3jiqasqql3lrqfi7h8e94ppg.apps.googleusercontent.com \
               -e JWT_ACCESS_EXPIRATION=90m \
               -e JWT_REFRESH_EXPIRATION=30d \
-              -e STORAGE_LIMIT_GB=3 \
+              -e STORAGE_LIMIT_GB=5 \
               -e STORAGE_WARNING_THRESHOLD=80 \
               -e SMTP_HOST=smtp.gmail.com \
               -e SMTP_PORT=587 \
