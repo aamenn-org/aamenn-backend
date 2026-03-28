@@ -1,68 +1,77 @@
-import { IsArray, IsEnum, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsIn,
+  IsNotEmpty,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
-import { ShareResourceType } from '../../../database/entities/share-link.entity';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ShareItemType } from '../../../database/entities/share-link.entity';
 
-export class CreateShareItemDto {
+export class ShareItemDto {
   @ApiProperty({
-    description: 'Type of resource to share',
-    enum: ShareResourceType,
-    example: ShareResourceType.FILE,
+    description: 'Type of item',
+    enum: ['file', 'folder'],
+    example: 'file',
   })
-  @IsEnum(ShareResourceType)
+  @IsIn(['file', 'folder'])
   @IsNotEmpty()
-  type: ShareResourceType;
+  type: ShareItemType;
 
   @ApiProperty({
-    description: 'UUID of the file or album to share',
+    description: 'UUID of the file or folder',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @IsUUID()
   @IsNotEmpty()
   id: string;
+}
+
+export class CreateShareDto {
+  @ApiProperty({
+    description: 'Items to include in this share (files and/or folders)',
+    type: [ShareItemDto],
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ShareItemDto)
+  items: ShareItemDto[];
 
   @ApiProperty({
-    description: 'Base slug for the share URL (derived from filename/album name)',
-    example: 'my-vacation-photo',
+    description: 'Base slug for the share URL',
+    example: 'my-vacation',
   })
   @IsString()
   @IsNotEmpty()
   slugBase: string;
 
   @ApiProperty({
-    description: 'Share decryption key (base64-encoded encrypted key)',
+    description: 'Encrypted share title (title encrypted with shareKeyRaw)',
     example: 'base64encodedkey...',
   })
   @IsString()
   @IsNotEmpty()
   shareKey: string;
 
-  @ApiProperty({
-    description: 'Expiration duration in seconds (null = no expiration)',
+  @ApiPropertyOptional({
+    description: 'Re-encrypted file keys: { fileId -> encryptedKey }',
+  })
+  @IsOptional()
+  @IsObject()
+  fileKeys?: Record<string, string>;
+
+  @ApiPropertyOptional({
+    description: 'Expiration duration in seconds (omit for no expiration)',
     example: 86400,
-    required: false,
   })
   @IsOptional()
   @IsNumber()
   @Min(60)
   expiresInSeconds?: number | null;
-
-  @ApiProperty({
-    description: 'Re-encrypted file keys for folder shares (fileId -> encrypted key)',
-    required: false,
-  })
-  @IsOptional()
-  @IsObject()
-  fileKeys?: Record<string, string>;
-}
-
-export class CreateSharesDto {
-  @ApiProperty({
-    description: 'Array of items to share',
-    type: [CreateShareItemDto],
-  })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => CreateShareItemDto)
-  items: CreateShareItemDto[];
 }
