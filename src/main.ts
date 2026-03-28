@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { json, urlencoded } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
@@ -20,6 +21,13 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 3000);
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+
+  // Increase body-parser limits — default 100KB is too small and causes
+  // PayloadTooLargeError when large requests accidentally hit the JSON parser.
+  // Multipart uploads are handled by multer (FileInterceptor) which has its own
+  // 2GB limit, but this covers any edge cases where Content-Type is misconfigured.
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   // Security middleware with strict CSP
   app.use(
