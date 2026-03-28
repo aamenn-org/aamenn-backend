@@ -60,7 +60,7 @@ jobs:
               -e SMTP_USER=yousseffaisal20@gmail.com \
               -e SMTP_PASS=opeizpbffdcdhfgu \
               -e EMAIL_FROM=yousseffaisal20@gmail.com \
-              -e CORS_ORIGIN=https://aamenn.com,https://www.aamenn.com \
+              -e CORS_ORIGIN=https://web.aamenn.com,https://aamenn.com,https://www.aamenn.com \
               -e THROTTLE_TTL=60000 \
               -e THROTTLE_LIMIT=100 \
               -e CACHE_TTL_ALBUMS=300 \
