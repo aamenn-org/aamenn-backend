@@ -878,7 +878,7 @@ export class FilesService {
       limitGb,
       fileCount,
       exceeded: usedBytes >= limitBytes,
-      percentUsed: Math.min(Math.round((usedBytes / limitBytes) * 100), 100),
+      percentUsed: Math.min((usedBytes / limitBytes) * 100, 100),
     };
   }
 }
