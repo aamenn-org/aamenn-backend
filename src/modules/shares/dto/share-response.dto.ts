@@ -1,83 +1,51 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { ShareResourceType } from '../../../database/entities/share-link.entity';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ShareItem } from '../../../database/entities/share-link.entity';
 
 export class ShareLinkDto {
-  @ApiProperty({
-    description: 'Share link ID',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
+  @ApiProperty({ description: 'Share link ID' })
   id: string;
 
-  @ApiProperty({
-    description: 'URL slug',
-    example: 'my-vacation-photo',
-  })
+  @ApiProperty({ description: 'URL slug', example: 'my-vacation' })
   slug: string;
 
   @ApiProperty({
     description: 'Full share URL',
-    example: 'https://app.aamenn.com/share/my-vacation-photo#k=base64key',
+    example: 'https://app.aamenn.com/share/my-vacation#k=base64key',
   })
   url: string;
 
   @ApiProperty({
-    description: 'Resource type',
-    enum: ShareResourceType,
+    description: 'Items included in this share',
+    type: 'array',
   })
-  resourceType: ShareResourceType;
+  items: ShareItem[];
 
-  @ApiProperty({
-    description: 'Resource ID',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  resourceId: string;
-
-  @ApiProperty({
-    description: 'Expiration timestamp',
-    example: '2024-12-31T23:59:59.000Z',
-    nullable: true,
-  })
+  @ApiPropertyOptional({ description: 'Expiration timestamp', nullable: true })
   expiresAt: Date | null;
 
-  @ApiProperty({
-    description: 'Revoked timestamp',
-    example: null,
-    nullable: true,
-  })
+  @ApiPropertyOptional({ description: 'Revoked timestamp', nullable: true })
   revokedAt: Date | null;
 
   @ApiProperty({
     description: 'Share status',
     enum: ['active', 'expired', 'revoked'],
-    example: 'active',
   })
   status: 'active' | 'expired' | 'revoked';
 
-  @ApiProperty({
-    description: 'Created timestamp',
-    example: '2024-01-01T00:00:00.000Z',
-  })
+  @ApiProperty({ description: 'Created timestamp' })
   createdAt: Date;
 }
 
-export class CreateSharesResponseDto {
-  @ApiProperty({
-    description: 'Created share links',
-    type: [ShareLinkDto],
-  })
-  shares: ShareLinkDto[];
+export class CreateShareResponseDto {
+  @ApiProperty({ type: ShareLinkDto })
+  share: ShareLinkDto;
 }
 
 export class ListSharesResponseDto {
-  @ApiProperty({
-    description: 'Share links',
-    type: [ShareLinkDto],
-  })
+  @ApiProperty({ type: [ShareLinkDto] })
   shares: ShareLinkDto[];
 
-  @ApiProperty({
-    description: 'Pagination metadata',
-  })
+  @ApiProperty()
   pagination: {
     page: number;
     limit: number;
@@ -87,102 +55,47 @@ export class ListSharesResponseDto {
 }
 
 export class RevokeShareResponseDto {
-  @ApiProperty({
-    description: 'Success status',
-    example: true,
-  })
+  @ApiProperty({ example: true })
   success: boolean;
 
-  @ApiProperty({
-    description: 'Message',
-    example: 'Share link revoked',
-  })
+  @ApiProperty({ example: 'Share link revoked' })
   message: string;
 }
 
-export class ResolveShareFileResponseDto {
-  @ApiProperty({
-    description: 'File ID',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
+export interface SharedFileItem {
+  type: 'file';
   fileId: string;
-
-  @ApiProperty({
-    description: 'Encrypted file key',
-    example: 'base64encryptedkey...',
-  })
   cipherFileKey: string;
-
-  @ApiProperty({
-    description: 'Encrypted filename',
-    example: 'base64encryptedfilename...',
-  })
   fileNameEncrypted: string;
-
-  @ApiProperty({
-    description: 'MIME type',
-    example: 'image/jpeg',
-  })
-  mimeType: string;
-
-  @ApiProperty({
-    description: 'File size in bytes',
-    example: 1024000,
-  })
-  sizeBytes: number;
-
-  @ApiProperty({
-    description: 'Image width',
-    example: 1920,
-    nullable: true,
-  })
+  mimeType: string | null;
+  sizeBytes: number | null;
   width: number | null;
-
-  @ApiProperty({
-    description: 'Image height',
-    example: 1080,
-    nullable: true,
-  })
   height: number | null;
-
-  @ApiProperty({
-    description: 'Video duration in seconds',
-    example: 120,
-    nullable: true,
-  })
   duration: number | null;
-
-  @ApiProperty({
-    description: 'Download URL for encrypted file',
-    example: 'https://...',
-  })
   downloadUrl: string;
-
-  @ApiProperty({
-    description: 'Small thumbnail URL',
-    example: 'https://...',
-    nullable: true,
-  })
   thumbSmallUrl: string | null;
-
-  @ApiProperty({
-    description: 'Medium thumbnail URL',
-    example: 'https://...',
-    nullable: true,
-  })
   thumbMediumUrl: string | null;
-
-  @ApiProperty({
-    description: 'Large thumbnail URL',
-    example: 'https://...',
-    nullable: true,
-  })
   thumbLargeUrl: string | null;
-
-  @ApiProperty({
-    description: 'Created timestamp',
-    example: '2024-01-01T00:00:00.000Z',
-  })
   createdAt: Date;
+}
+
+export interface SharedFolderItem {
+  type: 'folder';
+  folderId: string;
+  nameEncrypted: string;
+}
+
+export type SharedRootItem = SharedFileItem | SharedFolderItem;
+
+export interface ResolveShareResponseDto {
+  shareKey: string;
+  fileKeys: Record<string, string>;
+  items: SharedRootItem[];
+}
+
+export interface BrowseShareFolderResponseDto {
+  folderId: string;
+  nameEncrypted: string;
+  items: SharedRootItem[];
 }
 

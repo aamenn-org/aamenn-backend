@@ -22,13 +22,12 @@ import { SharesService } from './shares.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
-import { CreateSharesDto } from './dto/create-share.dto';
+import { CreateShareDto } from './dto/create-share.dto';
 import { ListSharesQueryDto } from './dto/list-shares-query.dto';
 import {
-  CreateSharesResponseDto,
+  CreateShareResponseDto,
   ListSharesResponseDto,
   RevokeShareResponseDto,
-  ResolveShareFileResponseDto,
 } from './dto/share-response.dto';
 import { ErrorResponseDto } from '../../common/dto';
 
@@ -41,31 +40,31 @@ export class SharesController {
   @ApiBearerAuth('JWT-auth')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Create share links',
-    description: 'Create public share links for files or folders. Supports bulk creation.',
+    summary: 'Create share link',
+    description: 'Create a single public share link for any selection of files and/or folders.',
   })
   @ApiResponse({
     status: HttpStatus.CREATED,
-    description: 'Share links created successfully',
-    type: CreateSharesResponseDto,
+    description: 'Share link created',
+    type: CreateShareResponseDto,
   })
   @ApiResponse({
     status: HttpStatus.BAD_REQUEST,
     description: 'Invalid input or resource not found',
     type: ErrorResponseDto,
   })
-  async createShares(
+  async createShare(
     @CurrentUser() authUser: AuthenticatedUser,
-    @Body() dto: CreateSharesDto,
+    @Body() dto: CreateShareDto,
     @Headers('origin') origin?: string,
-  ): Promise<CreateSharesResponseDto> {
+  ): Promise<CreateShareResponseDto> {
     const frontendBaseUrl = origin || 'http://localhost:5173';
-    const shares = await this.sharesService.createShares(
+    const share = await this.sharesService.createShare(
       authUser.userId,
-      dto.items,
+      dto,
       frontendBaseUrl,
     );
-    return { shares };
+    return { share };
   }
 
   @Get()
@@ -100,11 +99,7 @@ export class SharesController {
     summary: 'Revoke share link',
     description: 'Revoke a share link. The link will no longer be accessible.',
   })
-  @ApiParam({
-    name: 'id',
-    description: 'Share link UUID',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
+  @ApiParam({ name: 'id', description: 'Share link UUID' })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Share link revoked',
@@ -126,56 +121,37 @@ export class SharesController {
   @Public()
   @ApiOperation({
     summary: 'Resolve share link (public)',
-    description: `Resolve a public share link by slug. Returns file or folder data with encrypted metadata.
-    
-**Public Access:**
-- No authentication required
-- Share key is provided in URL fragment by client
-- Returns encrypted data that can be decrypted client-side with the share key`,
+    description: 'Resolve a public share link. Returns root items + all file keys for client-side decryption.',
   })
-  @ApiParam({
-    name: 'slug',
-    description: 'Share link slug',
-    example: 'my-vacation-photo',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Share resolved successfully',
-  })
+  @ApiParam({ name: 'slug', description: 'Share link slug', example: 'my-vacation' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Share resolved' })
   @ApiResponse({
     status: HttpStatus.NOT_FOUND,
-    description: 'Share link not found, expired, or revoked',
+    description: 'Share not found, expired, or revoked',
     type: ErrorResponseDto,
   })
-  async resolveShare(
+  async resolveShare(@Param('slug') slug: string) {
+    return this.sharesService.resolveShare(slug);
+  }
+
+  @Get(':slug/browse/:folderId')
+  @Public()
+  @ApiOperation({
+    summary: 'Browse folder within a share (public)',
+    description: 'Navigate into a folder that is part of a share. Returns child folders and files.',
+  })
+  @ApiParam({ name: 'slug', description: 'Share link slug' })
+  @ApiParam({ name: 'folderId', description: 'Folder UUID to browse into' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Folder contents' })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: 'Folder is not accessible via this share',
+    type: ErrorResponseDto,
+  })
+  async browseShareFolder(
     @Param('slug') slug: string,
-    @Query('page') pageParam?: string,
-    @Query('limit') limitParam?: string,
+    @Param('folderId', ParseUUIDPipe) folderId: string,
   ) {
-    const page = pageParam ? parseInt(pageParam, 10) : 1;
-    const limit = limitParam ? parseInt(limitParam, 10) : 50;
-
-    const share = await this.sharesService.resolveShare(slug);
-
-    if (share.resourceType === 'file') {
-      const fileData = await this.sharesService.resolveFileShare(
-        share.resourceId,
-      );
-      return {
-        type: 'file',
-        shareKey: share.shareKey,
-        data: fileData,
-      };
-    } else if (share.resourceType === 'folder') {
-      const folderData = await this.sharesService.resolveFolderShare(
-        share.resourceId,
-      );
-      return {
-        type: 'folder',
-        shareKey: share.shareKey,
-        fileKeys: share.metadata?.fileKeys || {},
-        data: folderData,
-      };
-    }
+    return this.sharesService.browseShareFolder(slug, folderId);
   }
 }
