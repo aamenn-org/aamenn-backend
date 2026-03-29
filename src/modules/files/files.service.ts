@@ -5,9 +5,9 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ConfigService } from '@nestjs/config';
 import { Repository, IsNull, In } from 'typeorm';
 import { File } from '../../database/entities/file.entity';
+import { User } from '../../database/entities/user.entity';
 import {
   DownloadLog,
   DownloadType,
@@ -43,8 +43,9 @@ export class FilesService {
     private filesRepository: Repository<File>,
     @InjectRepository(DownloadLog)
     private downloadLogsRepository: Repository<DownloadLog>,
+    @InjectRepository(User)
+    private usersRepository: Repository<User>,
     private b2StorageService: B2StorageService,
-    private configService: ConfigService,
     private cacheService: CacheService,
   ) {
     // CRITICAL: ThumbnailService removed - backend NEVER processes plaintext images
@@ -857,23 +858,29 @@ export class FilesService {
    * Includes trashed files since they still occupy B2 storage.
    */
   async getStorageUsage(userId: string) {
-    // Get total bytes used (including trashed files) and active file count
-    const result = await this.filesRepository
-      .createQueryBuilder('file')
-      .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
-      .addSelect('COUNT(CASE WHEN file.deletedAt IS NULL THEN 1 END)', 'fileCount')
-      .where('file.userId = :userId', { userId })
-      .getRawOne();
+    // Get total bytes used (including trashed files), active file count, and user's individual limit
+    const [result, user] = await Promise.all([
+      this.filesRepository
+        .createQueryBuilder('file')
+        .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
+        .addSelect('COUNT(CASE WHEN file.deletedAt IS NULL THEN 1 END)', 'fileCount')
+        .where('file.userId = :userId', { userId })
+        .getRawOne(),
+      this.usersRepository.findOne({
+        where: { id: userId },
+        select: ['storageLimitGb'],
+      }),
+    ]);
 
     const usedBytes = parseInt(result.totalBytes, 10) || 0;
     const fileCount = parseInt(result.fileCount, 10) || 0;
-    const limitGb = this.configService.get<number>('storage.limitGb', 1);
-    const limitBytes = limitGb * 1024 * 1024 * 1024; // Convert GB to bytes
+    const limitGb = user?.storageLimitGb ?? 5;
+    const limitBytes = limitGb * 1024 * 1024 * 1024;
     const usedGb = usedBytes / (1024 * 1024 * 1024);
 
     return {
       usedBytes,
-      usedGb: Math.round(usedGb * 100) / 100, // Round to 2 decimal places
+      usedGb: Math.round(usedGb * 100) / 100,
       limitBytes,
       limitGb,
       fileCount,

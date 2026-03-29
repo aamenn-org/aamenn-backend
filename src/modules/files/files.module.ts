@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ConfigModule } from '@nestjs/config';
 import { FilesController } from './files.controller';
 import { FilesService } from './files.service';
 import { TrashCleanupService } from './trash-cleanup.service';
@@ -14,7 +13,6 @@ import { StorageModule } from '../storage/storage.module';
   imports: [
     TypeOrmModule.forFeature([File, User, DownloadLog, Folder]),
     StorageModule,
-    ConfigModule,
   ],
   controllers: [FilesController],
   providers: [FilesService, TrashCleanupService],

@@ -60,6 +60,13 @@ export class User {
   @Column({ type: 'integer', name: 'trash_retention_days', default: 30 })
   trashRetentionDays: number;
 
+  @Column({
+    type: 'integer',
+    name: 'storage_limit_gb',
+    default: 5,
+  })
+  storageLimitGb: number;
+
   @Column({ type: 'text', nullable: true, name: 'google_access_token' })
   googleAccessToken: string | null;
 

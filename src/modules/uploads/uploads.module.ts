@@ -5,9 +5,10 @@ import { UploadsService } from './uploads.service';
 import { UploadCleanupService } from './upload-cleanup.service';
 import { UploadSession } from '../../database/entities/upload-session.entity';
 import { File } from '../../database/entities/file.entity';
+import { User } from '../../database/entities/user.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UploadSession, File])],
+  imports: [TypeOrmModule.forFeature([UploadSession, File, User])],
   controllers: [UploadsController],
   providers: [UploadsService, UploadCleanupService],
   exports: [UploadsService],
