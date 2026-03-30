@@ -3,12 +3,14 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  PayloadTooLargeException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UploadSession, CompletedPart } from '../../database/entities/upload-session.entity';
 import { File } from '../../database/entities/file.entity';
+import { User } from '../../database/entities/user.entity';
 import { B2StorageService } from '../storage/b2-storage.service';
 import { CacheService } from '../cache/cache.service';
 import { StartUploadDto } from './dto/start-upload.dto';
@@ -24,6 +26,8 @@ export class UploadsService {
     private readonly sessionsRepo: Repository<UploadSession>,
     @InjectRepository(File)
     private readonly filesRepo: Repository<File>,
+    @InjectRepository(User)
+    private readonly usersRepo: Repository<User>,
     private readonly b2: B2StorageService,
     private readonly cacheService: CacheService,
   ) {}
@@ -33,6 +37,28 @@ export class UploadsService {
    * Creates a B2 large file and a local UploadSession record.
    */
   async startUpload(userId: string, dto: StartUploadDto) {
+    // Enforce per-user storage limit before initiating upload
+    const [storageResult, user] = await Promise.all([
+      this.filesRepo
+        .createQueryBuilder('file')
+        .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
+        .where('file.userId = :userId', { userId })
+        .getRawOne<{ totalBytes: string }>(),
+      this.usersRepo.findOne({ where: { id: userId }, select: ['storageLimitGb'] }),
+    ]);
+
+    const usedBytes = parseInt(storageResult?.totalBytes ?? '0', 10);
+    const limitGb = user?.storageLimitGb ?? 5;
+    const limitBytes = limitGb * 1024 * 1024 * 1024;
+
+    if (usedBytes + dto.totalBytes > limitBytes) {
+      const remainingBytes = Math.max(0, limitBytes - usedBytes);
+      throw new PayloadTooLargeException(
+        `Storage limit exceeded. Your limit is ${limitGb} GB. ` +
+        `You have ${(remainingBytes / (1024 * 1024 * 1024)).toFixed(2)} GB remaining.`,
+      );
+    }
+
     const b2FilePath = this.b2.generateFilePath(userId);
 
     const { fileId: b2FileId } = await this.b2.startLargeFile(b2FilePath);

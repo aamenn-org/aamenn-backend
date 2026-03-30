@@ -48,6 +48,7 @@ export interface UserWithStats {
   lastLoginAt: Date | null;
   fileCount: number;
   storageBytes: number;
+  storageLimitGb: number;
 }
 
 /**
@@ -260,6 +261,7 @@ export class AdminService {
         'user.isActive',
         'user.createdAt',
         'user.lastLoginAt',
+        'user.storageLimitGb',
       ])
       .addSelect('COUNT(CASE WHEN file.deletedAt IS NULL THEN file.id END)', 'fileCount')
       .addSelect('COALESCE(SUM(CASE WHEN file.deletedAt IS NULL THEN file.sizeBytes END), 0)', 'storageBytes')
@@ -270,7 +272,8 @@ export class AdminService {
       .addGroupBy('user.role')
       .addGroupBy('user.isActive')
       .addGroupBy('user.createdAt')
-      .addGroupBy('user.lastLoginAt');
+      .addGroupBy('user.lastLoginAt')
+      .addGroupBy('user.storageLimitGb');
 
     // Add search filter
     if (search) {
@@ -321,6 +324,7 @@ export class AdminService {
       lastLoginAt: row.user_last_login_at,
       fileCount: parseInt(row.fileCount || '0', 10),
       storageBytes: parseInt(row.storageBytes || '0', 10),
+      storageLimitGb: parseInt(row.user_storage_limit_gb || '5', 10),
     }));
 
     return {
@@ -332,6 +336,28 @@ export class AdminService {
     };
   }
 
+
+  /**
+   * Set per-user storage limit (1–1024 GB).
+   * Only regular users can be updated.
+   */
+  async setUserStorageLimit(
+    userId: string,
+    storageLimitGb: number,
+  ): Promise<User> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      throw new Error('Cannot modify admin users');
+    }
+
+    user.storageLimitGb = storageLimitGb;
+    return this.usersRepository.save(user);
+  }
 
   /**
    * Update user status (enable/disable)

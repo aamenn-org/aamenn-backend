@@ -21,7 +21,7 @@ import {
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { AdminGuard } from '../../common/guards';
-import { AdminUsersQueryDto, UpdateUserStatusDto } from './dto';
+import { AdminUsersQueryDto, UpdateUserStatusDto, SetUserStorageLimitDto } from './dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -68,6 +68,34 @@ export class AdminController {
     return this.adminService.getUsers(query);
   }
 
+
+  /**
+   * Set per-user storage limit
+   */
+  @Patch('users/:userId/storage-limit')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Set user storage limit',
+    description: 'Set the storage quota for a specific user (1–1024 GB). Defaults to 5 GB.',
+  })
+  @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Storage limit updated' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Cannot modify admin users' })
+  async setUserStorageLimit(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() dto: SetUserStorageLimitDto,
+  ) {
+    try {
+      const user = await this.adminService.setUserStorageLimit(userId, dto.storageLimitGb);
+      return { id: user.id, storageLimitGb: user.storageLimitGb };
+    } catch (error) {
+      if (error.message === 'User not found') {
+        throw new NotFoundException('User not found');
+      }
+      throw error;
+    }
+  }
 
   /**
    * Permanently delete a user and all their data (files, albums, B2 storage)
