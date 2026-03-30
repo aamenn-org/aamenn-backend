@@ -53,6 +53,9 @@ export class Contact {
   @Column({ name: 'photo_url_encrypted', type: 'text', nullable: true })
   photoUrlEncrypted: string;
 
+  @Column({ name: 'search_tokens', type: 'text', array: true, default: '{}' })
+  searchTokens: string[];
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

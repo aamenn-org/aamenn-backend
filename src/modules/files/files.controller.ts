@@ -278,23 +278,6 @@ export class FilesController {
   }
 
   /**
-   * Get single file metadata and download URL.
-   */
-  @Get(':id')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Get file', description: 'Get file metadata and signed download URL.' })
-  @ApiParam({ name: 'id', description: 'File UUID' })
-  @ApiResponse({ status: HttpStatus.OK, type: GetFileResponseDto })
-  @ApiResponse({ status: HttpStatus.NOT_FOUND, type: ErrorResponseDto })
-  @ApiResponse({ status: HttpStatus.FORBIDDEN, type: ErrorResponseDto })
-  async getFile(
-    @CurrentUser() authUser: AuthenticatedUser,
-    @Param('id', ParseUUIDPipe) fileId: string,
-  ) {
-    return this.filesService.getFile(fileId, authUser.userId);
-  }
-
-  /**
    * List files in trash.
    */
   @Get('trash')
@@ -310,6 +293,23 @@ export class FilesController {
       page: query.page,
       limit: query.limit,
     });
+  }
+
+  /**
+   * Get single file metadata and download URL.
+   */
+  @Get(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get file', description: 'Get file metadata and signed download URL.' })
+  @ApiParam({ name: 'id', description: 'File UUID' })
+  @ApiResponse({ status: HttpStatus.OK, type: GetFileResponseDto })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, type: ErrorResponseDto })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, type: ErrorResponseDto })
+  async getFile(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) fileId: string,
+  ) {
+    return this.filesService.getFile(fileId, authUser.userId);
   }
 
 
