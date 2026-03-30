@@ -1,9 +1,8 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { google } from 'googleapis';
-import { OAuth2Client } from 'google-auth-library';
 import { Contact } from '../../database/entities/contact.entity';
+import { EncryptedContactDto } from './dto/sync-contacts.dto';
 
 @Injectable()
 export class ContactsService {
@@ -12,131 +11,79 @@ export class ContactsService {
     private contactRepository: Repository<Contact>,
   ) {}
 
-  async syncGoogleContacts(userId: string, accessToken: string) {
-    // 🚨 IMPORTANT: THIS IS NOT ZERO-KNOWLEDGE!
-    // TODO: Convert to client-side encryption for true zero-knowledge
-    // Current flow: Google API → Backend (plaintext) → Database (plaintext)
-    // Target flow: Google API → Frontend (encrypt) → Backend (encrypted blob) → Database (encrypted)
-    
-    if (!accessToken) {
-      throw new BadRequestException('Access token is required');
+  async syncEncryptedContacts(userId: string, encryptedContacts: EncryptedContactDto[]) {
+    if (!Array.isArray(encryptedContacts)) {
+      throw new BadRequestException('contacts must be an array');
     }
 
-    try {
-      const oauth2Client = new OAuth2Client();
-      oauth2Client.setCredentials({ access_token: accessToken });
+    await this.contactRepository.delete({ userId });
 
-      const people = google.people({ 
-        version: 'v1', 
-        auth: oauth2Client 
-      });
-      
-      // Fetch all contacts using pagination
-      const allConnections = await this.fetchAllGoogleContacts(people);
-      
-      // 🚨 SECURITY WARNING: Backend processes plaintext contact data!
-      // TODO: Move this processing to client-side with master key encryption
-      await this.contactRepository.delete({ userId });
-      
-      // 🚨 NOT ZERO-KNOWLEDGE: Processing plaintext contacts on backend
-      // TODO: Frontend should encrypt contacts before sending to backend
-      const contacts = this.processGoogleConnections(allConnections, userId);
-      
-      if (contacts.length > 0) {
-        // 🚨 SECURITY ISSUE: Storing plaintext contact data in database
-        // TODO: Store only encrypted blobs from client-side encryption
-        
-        // Batch insert for better performance with large datasets
-        const batchSize = 500;
-        for (let i = 0; i < contacts.length; i += batchSize) {
-          const batch = contacts.slice(i, i + batchSize);
-          await this.contactRepository.save(batch);
-        }
-      }
-      
-      return {
-        success: true,
-        synced: contacts.length,
-        message: `Successfully synced ${contacts.length} contacts`
-      };
+    if (encryptedContacts.length > 0) {
+      const entities = encryptedContacts.map(c => ({
+        userId,
+        googleContactId: c.googleContactId,
+        nameEncrypted: c.nameEncrypted,
+        nicknameEncrypted: c.nicknameEncrypted,
+        phoneEncrypted: c.phoneEncrypted,
+        emailEncrypted: c.emailEncrypted,
+        addressEncrypted: c.addressEncrypted,
+        organizationEncrypted: c.organizationEncrypted,
+        occupationEncrypted: c.occupationEncrypted,
+        birthdayEncrypted: c.birthdayEncrypted,
+        bioEncrypted: c.bioEncrypted,
+        urlsEncrypted: c.urlsEncrypted,
+        photoUrlEncrypted: c.photoUrlEncrypted,
+        searchTokens: c.searchTokens ?? [],
+      }));
 
-    } catch (error) {
-      if (error.code === 403) {
-        throw new BadRequestException('Google People API is not enabled. Please enable it in your Google Cloud Console.');
+      const batchSize = 500;
+      for (let i = 0; i < entities.length; i += batchSize) {
+        await this.contactRepository.save(entities.slice(i, i + batchSize));
       }
-      
-      if (error.code === 401) {
-        throw new BadRequestException('Access token expired or invalid. Please try signing in again.');
-      }
-      
-      if (error.code === 429) {
-        throw new BadRequestException('Google API quota exceeded. Please try again later.');
-      }
-      
-      throw new BadRequestException('Failed to sync contacts. Please try again.');
     }
+
+    return {
+      success: true,
+      synced: encryptedContacts.length,
+      message: `Successfully synced ${encryptedContacts.length} contacts`,
+    };
   }
 
-  private async fetchAllGoogleContacts(people: any): Promise<any[]> {
-    const allConnections: any[] = [];
-    let pageToken: string | undefined = undefined;
-    const pageSize = 1000; // Google's maximum allowed pageSize
-
-    do {
-      const response: any = await people.people.connections.list({
-        resourceName: 'people/me',
-        personFields: 'names,nicknames,phoneNumbers,emailAddresses,addresses,organizations,occupations,birthdays,genders,biographies,relations,events,userDefined,photos,urls',
-        pageSize,
-        pageToken,
-      });
-
-      const connections = response.data.connections || [];
-      allConnections.push(...connections);
-
-      // Get next page token for pagination
-      pageToken = response.data.nextPageToken;
-
-    } while (pageToken); // Continue until no more pages
-
-    return allConnections;
-  }
-
-  private processGoogleConnections(connections: any[], userId: string) {
-    // 🚨 CRITICAL SECURITY FLAW: Processing plaintext contact data!
-    // TODO: This entire method should be moved to client-side
-    // Frontend should encrypt contacts with master key before sending to backend
-    
-    return connections.map(person => ({
-      userId,
-      googleContactId: person.resourceName,
-      // 🚨 WARNING: These fields are NOT encrypted despite the "Encrypted" suffix!
-      // TODO: Frontend should encrypt these with master key before sending
-      nameEncrypted: person.names?.[0]?.displayName,           // ← PLAINTEXT!
-      nicknameEncrypted: person.nicknames?.[0]?.value,           // ← PLAINTEXT!
-      phoneEncrypted: person.phoneNumbers?.map((p: any) => p.value).join(', '), // ← PLAINTEXT!
-      emailEncrypted: person.emailAddresses?.map((e: any) => e.value).join(', '), // ← PLAINTEXT!
-      addressEncrypted: person.addresses?.[0] ? 
-        `${person.addresses[0].streetAddress}, ${person.addresses[0].city}, ${person.addresses[0].country}`.trim() : undefined, // ← PLAINTEXT!
-      organizationEncrypted: person.organizations?.[0]?.name,    // ← PLAINTEXT!
-      occupationEncrypted: person.occupations?.[0]?.value,        // ← PLAINTEXT!
-      birthdayEncrypted: person.birthdays?.[0]?.date ? 
-        `${person.birthdays[0].date.year}-${person.birthdays[0].date.month}-${person.birthdays[0].date.day}` : undefined, // ← PLAINTEXT!
-      bioEncrypted: person.biographies?.[0]?.value,               // ← PLAINTEXT!
-      urlsEncrypted: person.urls?.map((u: any) => u.value).join(', '), // ← PLAINTEXT!
-      photoUrlEncrypted: person.photos?.[0]?.url                   // ← PLAINTEXT!
-    }));
-  }
-
-  async getUserContacts(userId: string) {
-    return this.contactRepository.find({ 
+  async getUserContacts(userId: string, page: number, limit: number) {
+    const [data, total] = await this.contactRepository.findAndCount({
       where: { userId },
-      order: { createdAt: 'DESC' }
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async searchContacts(userId: string, tokens: string[], page: number, limit: number) {
+    const qb = this.contactRepository
+      .createQueryBuilder('c')
+      .where('c.user_id = :userId', { userId })
+      .orderBy('c.created_at', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    tokens.forEach((token, i) => {
+      qb.andWhere(`:token${i} = ANY(c.search_tokens)`, { [`token${i}`]: token });
+    });
+
+    const [data, total] = await qb.getManyAndCount();
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async deleteAllContacts(userId: string) {
     await this.contactRepository.delete({ userId });
     return { success: true, message: 'All contacts deleted' };
   }
-
 }
