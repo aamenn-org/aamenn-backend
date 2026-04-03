@@ -368,10 +368,14 @@ export class AuthService {
 
     const authProviderId = `${AUTH_PROVIDER.GOOGLE}:${payload.sub}`;
     
-    // Check if user is new by trying to find first
-    const existingUser = await this.usersService.findUser({ authProviderId });
+    // Mirror findOrCreate's two-step lookup: first by provider ID, then by email.
+    // This ensures isNewUser is false for users who previously registered with
+    // email/password and are now signing in with Google for the first time.
+    const existingUser =
+      (await this.usersService.findUser({ authProviderId })) ??
+      (payload.email ? await this.usersService.findUser({ email: payload.email }) : null);
     const isNewUser = !existingUser;
-    
+
     const user = await this.usersService.findOrCreate(
       authProviderId,
       payload.email,
