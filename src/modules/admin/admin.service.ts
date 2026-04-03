@@ -189,19 +189,21 @@ export class AdminService {
       }),
     ]);
 
-    // File statistics
+    // File statistics (exclude avatar files)
     const fileStats = await this.filesRepository
       .createQueryBuilder('file')
       .select('COUNT(*)', 'totalFiles')
       .addSelect('COALESCE(SUM(file.sizeBytes), 0)', 'totalStorageBytes')
       .addSelect('COALESCE(AVG(file.sizeBytes), 0)', 'avgFileSize')
       .where('file.deletedAt IS NULL')
+      .andWhere('file.isAvatar = :isAvatar', { isAvatar: false })
       .getRawOne();
 
     const uploadsToday = await this.filesRepository.count({
       where: {
         createdAt: MoreThanOrEqual(startOfTodayUTC),
         deletedAt: undefined,
+        isAvatar: false,
       },
     });
 
@@ -209,6 +211,7 @@ export class AdminService {
       where: {
         createdAt: MoreThanOrEqual(startOfWeekUTC),
         deletedAt: undefined,
+        isAvatar: false,
       },
     });
 
@@ -456,13 +459,14 @@ export class AdminService {
 
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    // Basic stats
+    // Basic stats (exclude avatar files)
     const basicStats = await this.filesRepository
       .createQueryBuilder('file')
       .select('COUNT(*)', 'totalFiles')
       .addSelect('COALESCE(SUM(file.sizeBytes), 0)', 'totalStorageBytes')
       .addSelect('COALESCE(AVG(file.sizeBytes), 0)', 'avgFileSize')
       .where('file.deletedAt IS NULL')
+      .andWhere('file.isAvatar = :isAvatar', { isAvatar: false })
       .getRawOne();
 
     // Upload counts
@@ -472,41 +476,46 @@ export class AdminService {
           where: {
             createdAt: MoreThanOrEqual(startOfTodayUTC),
             deletedAt: undefined,
+            isAvatar: false,
           },
         }),
         this.filesRepository.count({
           where: {
             createdAt: MoreThanOrEqual(startOfWeekUTC),
             deletedAt: undefined,
+            isAvatar: false,
           },
         }),
         this.filesRepository.count({
           where: {
             createdAt: MoreThanOrEqual(startOfMonthUTC),
             deletedAt: undefined,
+            isAvatar: false,
           },
         }),
       ],
     );
 
-    // Storage growth (last 30 days)
+    // Storage growth (last 30 days, exclude avatars)
     const growthStats = await this.filesRepository
       .createQueryBuilder('file')
       .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
       .where('file.createdAt >= :date', { date: thirtyDaysAgo })
       .andWhere('file.deletedAt IS NULL')
+      .andWhere('file.isAvatar = :isAvatar', { isAvatar: false })
       .getRawOne();
 
     const storageGrowthDaily =
       parseInt(growthStats?.totalBytes || '0', 10) / 30;
 
-    // Files by mime type
+    // Files by mime type (exclude avatars)
     const mimeTypeStats = await this.filesRepository
       .createQueryBuilder('file')
       .select('file.mimeType', 'mimeType')
       .addSelect('COUNT(*)', 'count')
       .addSelect('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
       .where('file.deletedAt IS NULL')
+      .andWhere('file.isAvatar = :isAvatar', { isAvatar: false })
       .groupBy('file.mimeType')
       .orderBy('count', 'DESC')
       .limit(10)
@@ -545,11 +554,12 @@ export class AdminService {
     const now = new Date();
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    // Get storage usage
+    // Get storage usage (exclude avatar files)
     const storageStats = await this.filesRepository
       .createQueryBuilder('file')
       .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
       .where('file.deletedAt IS NULL')
+      .andWhere('file.isAvatar = :isAvatar', { isAvatar: false })
       .getRawOne();
 
     const storageUsed = parseInt(storageStats?.totalBytes || '0', 10);
