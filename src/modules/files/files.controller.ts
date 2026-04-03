@@ -399,16 +399,17 @@ export class FilesController {
   }
 
   /**
-   * Empty trash - permanently delete all trashed files.
+   * Empty trash in batches — deletes a batch of trashed files per call.
+   * The frontend calls this in a loop until remaining reaches 0.
    */
   @Post('trash/empty')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Empty trash',
-    description: 'Permanently deletes all files in trash. Cannot be undone.',
+    summary: 'Empty trash (batch)',
+    description: 'Deletes a batch of trashed files. Call in a loop until remaining=0.',
   })
-  async emptyTrash(@CurrentUser() authUser: AuthenticatedUser) {
-    return this.filesService.emptyTrash(authUser.userId);
+  async emptyTrashBatch(@CurrentUser() authUser: AuthenticatedUser) {
+    return this.filesService.emptyTrashBatch(authUser.userId);
   }
 
   /**

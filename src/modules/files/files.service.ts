@@ -834,22 +834,55 @@ export class FilesService {
   }
 
   /**
-   * Empty trash - permanently delete all trashed files for a user.
+   * Empty trash in batches — deletes up to `batchSize` trashed files per call.
+   * Returns the IDs deleted so the frontend can remove them immediately.
+   * The frontend calls this in a loop until `remaining` reaches 0.
    */
-  async emptyTrash(userId: string) {
+  async emptyTrashBatch(
+    userId: string,
+    batchSize: number = 2,
+  ): Promise<{ deletedIds: string[]; remaining: number }> {
     const files = await this.filesRepository
       .createQueryBuilder('file')
       .where('file.userId = :userId', { userId })
       .andWhere('file.deleted_at IS NOT NULL')
       .withDeleted()
+      .orderBy('file.deleted_at', 'ASC')
+      .limit(batchSize)
       .getMany();
 
     if (files.length === 0) {
-      return { success: true, count: 0 };
+      return { deletedIds: [], remaining: 0 };
     }
 
-    const fileIds = files.map((f) => f.id);
-    return this.deleteFilesPermanentlyBulk(fileIds, userId);
+    const deletedIds: string[] = [];
+
+    for (const file of files) {
+      const fileId = file.id; // capture before remove() clears the PK
+      try {
+        await this.b2StorageService.deleteFiles([
+          file.b2FilePath,
+          file.b2ThumbSmallPath,
+          file.b2ThumbMediumPath,
+          file.b2ThumbLargePath,
+        ]);
+      } catch (error) {
+        this.logger.error(`Failed to delete file from B2: ${fileId}`, error);
+      }
+      await this.filesRepository.remove(file);
+      deletedIds.push(fileId);
+    }
+
+    await this.cacheService.incrementVersion(userId, 'files');
+
+    const remaining = await this.filesRepository
+      .createQueryBuilder('file')
+      .where('file.userId = :userId', { userId })
+      .andWhere('file.deleted_at IS NOT NULL')
+      .withDeleted()
+      .getCount();
+
+    return { deletedIds, remaining };
   }
 
   /**
@@ -865,6 +898,7 @@ export class FilesService {
         .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
         .addSelect('COUNT(CASE WHEN file.deletedAt IS NULL THEN 1 END)', 'fileCount')
         .where('file.userId = :userId', { userId })
+        .withDeleted()
         .getRawOne(),
       this.usersRepository.findOne({
         where: { id: userId },
