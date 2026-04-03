@@ -835,6 +835,7 @@ export class FilesService {
 
   /**
    * Empty trash - permanently delete all trashed files for a user.
+   * @deprecated Use emptyTrashBatch in a loop for progressive UI feedback.
    */
   async emptyTrash(userId: string) {
     const files = await this.filesRepository
@@ -850,6 +851,59 @@ export class FilesService {
 
     const fileIds = files.map((f) => f.id);
     return this.deleteFilesPermanentlyBulk(fileIds, userId);
+  }
+
+  /**
+   * Empty trash in one batch of up to `batchSize` files.
+   * Call repeatedly until `remaining === 0`.
+   * Returns the IDs actually deleted so the frontend can remove them immediately.
+   */
+  async emptyTrashBatch(
+    userId: string,
+    batchSize: number = 25,
+  ): Promise<{ deletedIds: string[]; remaining: number }> {
+    const files = await this.filesRepository
+      .createQueryBuilder('file')
+      .where('file.userId = :userId', { userId })
+      .andWhere('file.deleted_at IS NOT NULL')
+      .withDeleted()
+      .orderBy('file.deleted_at', 'ASC')
+      .limit(batchSize)
+      .getMany();
+
+    if (files.length === 0) {
+      return { deletedIds: [], remaining: 0 };
+    }
+
+    const deletedIds: string[] = [];
+
+    await Promise.all(
+      files.map(async (file) => {
+        try {
+          await this.b2StorageService.deleteFiles([
+            file.b2FilePath,
+            file.b2ThumbSmallPath,
+            file.b2ThumbMediumPath,
+            file.b2ThumbLargePath,
+          ]);
+        } catch (error) {
+          this.logger.error(`Failed to delete file from B2: ${file.id}`, error);
+        }
+        await this.filesRepository.remove(file);
+        deletedIds.push(file.id);
+      }),
+    );
+
+    await this.cacheService.incrementVersion(userId, 'files');
+
+    const remaining = await this.filesRepository
+      .createQueryBuilder('file')
+      .where('file.userId = :userId', { userId })
+      .andWhere('file.deleted_at IS NOT NULL')
+      .withDeleted()
+      .getCount();
+
+    return { deletedIds, remaining };
   }
 
   /**

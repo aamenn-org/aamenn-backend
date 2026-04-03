@@ -412,6 +412,20 @@ export class FilesController {
   }
 
   /**
+   * Empty trash in one batch (up to 25 files).
+   * Call in a loop until remaining === 0 for progressive UI feedback.
+   */
+  @Post('trash/empty-batch')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Empty trash (one batch)',
+    description: 'Permanently deletes up to 25 trashed files. Returns deletedIds and remaining count. Call repeatedly until remaining === 0.',
+  })
+  async emptyTrashBatch(@CurrentUser() authUser: AuthenticatedUser) {
+    return this.filesService.emptyTrashBatch(authUser.userId);
+  }
+
+  /**
    * Move file to trash (soft-delete).
    */
   @Delete(':id')

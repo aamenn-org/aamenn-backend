@@ -266,8 +266,8 @@ export class AdminService {
         'user.lastLoginAt',
         'user.storageLimitGb',
       ])
-      .addSelect('COUNT(CASE WHEN file.deletedAt IS NULL THEN file.id END)', 'fileCount')
-      .addSelect('COALESCE(SUM(CASE WHEN file.deletedAt IS NULL THEN file.sizeBytes END), 0)', 'storageBytes')
+      .addSelect('COUNT(CASE WHEN file.deletedAt IS NULL AND file.isAvatar = false THEN file.id END)', 'fileCount')
+      .addSelect('COALESCE(SUM(CASE WHEN file.deletedAt IS NULL AND file.isAvatar = false THEN file.sizeBytes END), 0)', 'storageBytes')
       .where('user.role = :role', { role: UserRole.USER })
       .groupBy('user.id')
       .addGroupBy('user.email')
