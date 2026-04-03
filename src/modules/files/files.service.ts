@@ -834,33 +834,13 @@ export class FilesService {
   }
 
   /**
-   * Empty trash - permanently delete all trashed files for a user.
-   * @deprecated Use emptyTrashBatch in a loop for progressive UI feedback.
-   */
-  async emptyTrash(userId: string) {
-    const files = await this.filesRepository
-      .createQueryBuilder('file')
-      .where('file.userId = :userId', { userId })
-      .andWhere('file.deleted_at IS NOT NULL')
-      .withDeleted()
-      .getMany();
-
-    if (files.length === 0) {
-      return { success: true, count: 0 };
-    }
-
-    const fileIds = files.map((f) => f.id);
-    return this.deleteFilesPermanentlyBulk(fileIds, userId);
-  }
-
-  /**
-   * Empty trash in one batch of up to `batchSize` files.
-   * Call repeatedly until `remaining === 0`.
-   * Returns the IDs actually deleted so the frontend can remove them immediately.
+   * Empty trash in batches — deletes up to `batchSize` trashed files per call.
+   * Returns the IDs deleted so the frontend can remove them immediately.
+   * The frontend calls this in a loop until `remaining` reaches 0.
    */
   async emptyTrashBatch(
     userId: string,
-    batchSize: number = 25,
+    batchSize: number = 2,
   ): Promise<{ deletedIds: string[]; remaining: number }> {
     const files = await this.filesRepository
       .createQueryBuilder('file')
@@ -877,22 +857,21 @@ export class FilesService {
 
     const deletedIds: string[] = [];
 
-    await Promise.all(
-      files.map(async (file) => {
-        try {
-          await this.b2StorageService.deleteFiles([
-            file.b2FilePath,
-            file.b2ThumbSmallPath,
-            file.b2ThumbMediumPath,
-            file.b2ThumbLargePath,
-          ]);
-        } catch (error) {
-          this.logger.error(`Failed to delete file from B2: ${file.id}`, error);
-        }
-        await this.filesRepository.remove(file);
-        deletedIds.push(file.id);
-      }),
-    );
+    for (const file of files) {
+      const fileId = file.id; // capture before remove() clears the PK
+      try {
+        await this.b2StorageService.deleteFiles([
+          file.b2FilePath,
+          file.b2ThumbSmallPath,
+          file.b2ThumbMediumPath,
+          file.b2ThumbLargePath,
+        ]);
+      } catch (error) {
+        this.logger.error(`Failed to delete file from B2: ${fileId}`, error);
+      }
+      await this.filesRepository.remove(file);
+      deletedIds.push(fileId);
+    }
 
     await this.cacheService.incrementVersion(userId, 'files');
 
@@ -919,6 +898,7 @@ export class FilesService {
         .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
         .addSelect('COUNT(CASE WHEN file.deletedAt IS NULL THEN 1 END)', 'fileCount')
         .where('file.userId = :userId', { userId })
+        .withDeleted()
         .getRawOne(),
       this.usersRepository.findOne({
         where: { id: userId },
