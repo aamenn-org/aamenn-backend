@@ -43,6 +43,7 @@ export class UploadsService {
         .createQueryBuilder('file')
         .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
         .where('file.userId = :userId', { userId })
+        .withDeleted()
         .getRawOne<{ totalBytes: string }>(),
       this.usersRepo.findOne({ where: { id: userId }, select: ['storageLimitGb'] }),
     ]);

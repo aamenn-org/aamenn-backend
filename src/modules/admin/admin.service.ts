@@ -189,19 +189,21 @@ export class AdminService {
       }),
     ]);
 
-    // File statistics
+    // File statistics (exclude avatar files, include trashed files in storage)
     const fileStats = await this.filesRepository
       .createQueryBuilder('file')
-      .select('COUNT(*)', 'totalFiles')
+      .select('COUNT(CASE WHEN file.deletedAt IS NULL THEN 1 END)', 'totalFiles')
       .addSelect('COALESCE(SUM(file.sizeBytes), 0)', 'totalStorageBytes')
-      .addSelect('COALESCE(AVG(file.sizeBytes), 0)', 'avgFileSize')
-      .where('file.deletedAt IS NULL')
+      .addSelect('COALESCE(AVG(CASE WHEN file.deletedAt IS NULL THEN file.sizeBytes END), 0)', 'avgFileSize')
+      .where('file.isAvatar = :isAvatar', { isAvatar: false })
+      .withDeleted()
       .getRawOne();
 
     const uploadsToday = await this.filesRepository.count({
       where: {
         createdAt: MoreThanOrEqual(startOfTodayUTC),
         deletedAt: undefined,
+        isAvatar: false,
       },
     });
 
@@ -209,6 +211,7 @@ export class AdminService {
       where: {
         createdAt: MoreThanOrEqual(startOfWeekUTC),
         deletedAt: undefined,
+        isAvatar: false,
       },
     });
 
@@ -249,82 +252,74 @@ export class AdminService {
     const { page = 1, limit = 20, search, sortBy, sortOrder } = query;
     const skip = (page - 1) * limit;
 
-    // Build base query - Fix the JOIN condition
-    const queryBuilder = this.usersRepository
-      .createQueryBuilder('user')
-      .leftJoin('user.files', 'file')
-      .select([
-        'user.id',
-        'user.email',
-        'user.displayName',
-        'user.role',
-        'user.isActive',
-        'user.createdAt',
-        'user.lastLoginAt',
-        'user.storageLimitGb',
-      ])
-      .addSelect('COUNT(CASE WHEN file.deletedAt IS NULL THEN file.id END)', 'fileCount')
-      .addSelect('COALESCE(SUM(CASE WHEN file.deletedAt IS NULL THEN file.sizeBytes END), 0)', 'storageBytes')
-      .where('user.role = :role', { role: UserRole.USER })
-      .groupBy('user.id')
-      .addGroupBy('user.email')
-      .addGroupBy('user.displayName')
-      .addGroupBy('user.role')
-      .addGroupBy('user.isActive')
-      .addGroupBy('user.createdAt')
-      .addGroupBy('user.lastLoginAt')
-      .addGroupBy('user.storageLimitGb');
-
-    // Add search filter
-    if (search) {
-      queryBuilder.andWhere(
-        '(user.email ILIKE :search OR user.displayName ILIKE :search)',
-        { search: `%${search}%` },
-      );
-    }
-
-    // Add sorting
+    // Determine ORDER BY clause
+    let orderClause: string;
+    const dir = sortOrder === 'ASC' ? 'ASC' : 'DESC';
     if (sortBy === UserSortBy.STORAGE) {
-      queryBuilder.orderBy('"storageBytes"', sortOrder);
+      orderClause = `storage_bytes ${dir}`;
     } else if (sortBy === UserSortBy.FILES) {
-      queryBuilder.orderBy('"fileCount"', sortOrder);
+      orderClause = `file_count ${dir}`;
     } else if (sortBy === UserSortBy.LAST_LOGIN) {
-      queryBuilder.orderBy('user.lastLoginAt', sortOrder, 'NULLS LAST');
+      orderClause = `u.last_login_at ${dir} NULLS LAST`;
     } else {
-      queryBuilder.orderBy('user.createdAt', sortOrder);
+      orderClause = `u.created_at ${dir}`;
     }
 
-    // Get total count (separate query for accurate count)
-    const totalQuery = this.usersRepository
-      .createQueryBuilder('user')
-      .where('user.role = :role', { role: UserRole.USER });
+    // Build search condition
+    const searchCondition = search
+      ? `AND (u.email ILIKE $2 OR u.display_name ILIKE $2)`
+      : '';
+    const params: (string | number)[] = [UserRole.USER];
+    if (search) params.push(`%${search}%`);
 
-    if (search) {
-      totalQuery.andWhere(
-        '(user.email ILIKE :search OR user.displayName ILIKE :search)',
-        { search: `%${search}%` },
-      );
-    }
+    // Count query
+    const countSql = `
+      SELECT COUNT(*) AS total
+      FROM users u
+      WHERE u.role = $1
+      ${searchCondition}
+    `;
+    const countResult = await this.usersRepository.query(countSql, params);
+    const total = parseInt(countResult[0]?.total || '0', 10);
 
-    const total = await totalQuery.getCount();
+    // Data query — LEFT JOIN raw files table (no soft-delete filter) so trashed files
+    // are included in storage_bytes; file_count only counts active (deleted_at IS NULL) files
+    const dataSql = `
+      SELECT
+        u.id,
+        u.email,
+        u.display_name       AS "displayName",
+        u.role,
+        u.is_active          AS "isActive",
+        u.created_at         AS "createdAt",
+        u.last_login_at      AS "lastLoginAt",
+        u.storage_limit_gb   AS "storageLimitGb",
+        COUNT(CASE WHEN f.deleted_at IS NULL AND f.is_avatar = FALSE THEN f.id END)::int AS file_count,
+        COALESCE(SUM(CASE WHEN f.is_avatar = FALSE THEN f.size_bytes END), 0)::bigint    AS storage_bytes
+      FROM users u
+      LEFT JOIN files f ON f.user_id = u.id
+      WHERE u.role = $1
+      ${searchCondition}
+      GROUP BY u.id, u.email, u.display_name, u.role, u.is_active,
+               u.created_at, u.last_login_at, u.storage_limit_gb
+      ORDER BY ${orderClause}
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `;
+    params.push(limit, skip);
 
-    // Get paginated results
-    const rawResults = await queryBuilder
-      .offset(skip)
-      .limit(limit)
-      .getRawMany();
+    const rawResults = await this.usersRepository.query(dataSql, params);
 
-    const users: UserWithStats[] = rawResults.map((row) => ({
-      id: row.user_id,
-      email: row.user_email,
-      displayName: row.user_display_name,
-      role: row.user_role,
-      isActive: row.user_is_active,
-      createdAt: row.user_created_at,
-      lastLoginAt: row.user_last_login_at,
-      fileCount: parseInt(row.fileCount || '0', 10),
-      storageBytes: parseInt(row.storageBytes || '0', 10),
-      storageLimitGb: parseInt(row.user_storage_limit_gb || '5', 10),
+    const users: UserWithStats[] = rawResults.map((row: Record<string, any>) => ({
+      id: row.id,
+      email: row.email,
+      displayName: row.displayName,
+      role: row.role,
+      isActive: row.isActive,
+      createdAt: row.createdAt,
+      lastLoginAt: row.lastLoginAt,
+      fileCount: parseInt(row.file_count ?? '0', 10),
+      storageBytes: parseInt(row.storage_bytes ?? '0', 10),
+      storageLimitGb: parseInt(row.storageLimitGb ?? '5', 10),
     }));
 
     return {
@@ -456,13 +451,14 @@ export class AdminService {
 
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    // Basic stats
+    // Basic stats (exclude avatar files, include trashed files in storage)
     const basicStats = await this.filesRepository
       .createQueryBuilder('file')
-      .select('COUNT(*)', 'totalFiles')
+      .select('COUNT(CASE WHEN file.deletedAt IS NULL THEN 1 END)', 'totalFiles')
       .addSelect('COALESCE(SUM(file.sizeBytes), 0)', 'totalStorageBytes')
-      .addSelect('COALESCE(AVG(file.sizeBytes), 0)', 'avgFileSize')
-      .where('file.deletedAt IS NULL')
+      .addSelect('COALESCE(AVG(CASE WHEN file.deletedAt IS NULL THEN file.sizeBytes END), 0)', 'avgFileSize')
+      .where('file.isAvatar = :isAvatar', { isAvatar: false })
+      .withDeleted()
       .getRawOne();
 
     // Upload counts
@@ -472,43 +468,48 @@ export class AdminService {
           where: {
             createdAt: MoreThanOrEqual(startOfTodayUTC),
             deletedAt: undefined,
+            isAvatar: false,
           },
         }),
         this.filesRepository.count({
           where: {
             createdAt: MoreThanOrEqual(startOfWeekUTC),
             deletedAt: undefined,
+            isAvatar: false,
           },
         }),
         this.filesRepository.count({
           where: {
             createdAt: MoreThanOrEqual(startOfMonthUTC),
             deletedAt: undefined,
+            isAvatar: false,
           },
         }),
       ],
     );
 
-    // Storage growth (last 30 days)
+    // Storage growth (last 30 days, exclude avatars, include trashed files)
     const growthStats = await this.filesRepository
       .createQueryBuilder('file')
       .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
       .where('file.createdAt >= :date', { date: thirtyDaysAgo })
-      .andWhere('file.deletedAt IS NULL')
+      .andWhere('file.isAvatar = :isAvatar', { isAvatar: false })
+      .withDeleted()
       .getRawOne();
 
     const storageGrowthDaily =
       parseInt(growthStats?.totalBytes || '0', 10) / 30;
 
-    // Files by mime type
+    // Files by mime type (exclude avatars, include trashed files in storage)
     const mimeTypeStats = await this.filesRepository
       .createQueryBuilder('file')
       .select('file.mimeType', 'mimeType')
-      .addSelect('COUNT(*)', 'count')
+      .addSelect('COUNT(CASE WHEN file.deletedAt IS NULL THEN 1 END)', 'count')
       .addSelect('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
-      .where('file.deletedAt IS NULL')
+      .where('file.isAvatar = :isAvatar', { isAvatar: false })
+      .withDeleted()
       .groupBy('file.mimeType')
-      .orderBy('count', 'DESC')
+      .orderBy('totalBytes', 'DESC')
       .limit(10)
       .getRawMany();
 
@@ -545,11 +546,12 @@ export class AdminService {
     const now = new Date();
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    // Get storage usage
+    // Get storage usage (exclude avatar files, include trashed files)
     const storageStats = await this.filesRepository
       .createQueryBuilder('file')
       .select('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
-      .where('file.deletedAt IS NULL')
+      .where('file.isAvatar = :isAvatar', { isAvatar: false })
+      .withDeleted()
       .getRawOne();
 
     const storageUsed = parseInt(storageStats?.totalBytes || '0', 10);
