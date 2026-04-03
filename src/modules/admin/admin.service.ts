@@ -508,7 +508,7 @@ export class AdminService {
       .addSelect('COALESCE(SUM(file.sizeBytes), 0)', 'totalBytes')
       .where('file.deletedAt IS NULL')
       .groupBy('file.mimeType')
-      .orderBy('count', 'DESC')
+      .orderBy('"totalBytes"', 'DESC')
       .limit(10)
       .getRawMany();
 
