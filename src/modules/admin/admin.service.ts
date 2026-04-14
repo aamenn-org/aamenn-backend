@@ -265,7 +265,7 @@ export class AdminService {
       orderClause = `u.created_at ${dir}`;
     }
 
-    // Build search condition
+    // Build search  condition
     const searchCondition = search
       ? `AND (u.email ILIKE $2 OR u.display_name ILIKE $2)`
       : '';
