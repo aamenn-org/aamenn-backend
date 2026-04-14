@@ -219,7 +219,10 @@ export class B2StorageService implements IStorageService, OnModuleInit {
         bucketId: this.bucketId,
       });
 
-      // Upload file to B2 using fetch since B2 SDK uploadFile has issues
+      // Upload file to B2 using fetch since B2 SDK uploadFile has issues.
+      // 4-minute hard timeout: if B2 stalls (not just slow) this unblocks the
+      // backend instead of hanging the request until nginx kills it at 300s.
+      const uploadAbort = AbortSignal.timeout(240_000);
       const uploadResponse = await fetch(response.data.uploadUrl, {
         method: 'POST',
         headers: {
@@ -230,6 +233,7 @@ export class B2StorageService implements IStorageService, OnModuleInit {
           'Content-Length': fileBuffer.length.toString(),
         },
         body: new Uint8Array(fileBuffer),
+        signal: uploadAbort,
       });
 
       if (!uploadResponse.ok) {
@@ -248,10 +252,11 @@ export class B2StorageService implements IStorageService, OnModuleInit {
         return this.uploadFile(b2FilePath, fileBuffer, sha1Hash, retryCount);
       }
 
-      // Retry on network errors (fetch failed)
+      // Retry on network errors and B2 fetch timeouts
       if (
         retryCount < MAX_RETRIES &&
-        (error.message?.includes('fetch failed') ||
+        (error.name === 'TimeoutError' ||
+          error.message?.includes('fetch failed') ||
           error.code === 'ECONNRESET' ||
           error.code === 'ETIMEDOUT')
       ) {
