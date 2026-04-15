@@ -14,6 +14,7 @@ import {
   UploadedFile,
   BadRequestException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
@@ -401,12 +402,14 @@ export class FilesController {
   /**
    * Empty trash in batches — deletes a batch of trashed files per call.
    * The frontend calls this in a loop until remaining reaches 0.
+   * High throttle limit: 10K files ÷ 50 per batch = 200 calls needed; allow 600/min for headroom.
    */
   @Post('trash/empty')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 600, ttl: 60000 } })
   @ApiOperation({
     summary: 'Empty trash (batch)',
-    description: 'Deletes a batch of trashed files. Call in a loop until remaining=0.',
+    description: 'Deletes a batch of 50 trashed files per call. Loop until remaining=0.',
   })
   async emptyTrashBatch(@CurrentUser() authUser: AuthenticatedUser) {
     return this.filesService.emptyTrashBatch(authUser.userId);

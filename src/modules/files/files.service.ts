@@ -840,7 +840,7 @@ export class FilesService {
    */
   async emptyTrashBatch(
     userId: string,
-    batchSize: number = 2,
+    batchSize: number = 50,
   ): Promise<{ deletedIds: string[]; remaining: number }> {
     const files = await this.filesRepository
       .createQueryBuilder('file')
@@ -855,23 +855,25 @@ export class FilesService {
       return { deletedIds: [], remaining: 0 };
     }
 
-    const deletedIds: string[] = [];
+    // Delete all B2 assets in parallel, then bulk-remove from DB in one query
+    await Promise.all(
+      files.map((file) =>
+        this.b2StorageService
+          .deleteFiles([
+            file.b2FilePath,
+            file.b2ThumbSmallPath,
+            file.b2ThumbMediumPath,
+            file.b2ThumbLargePath,
+          ])
+          .catch((error) =>
+            this.logger.error(`Failed to delete file from B2: ${file.id}`, error),
+          ),
+      ),
+    );
 
-    for (const file of files) {
-      const fileId = file.id; // capture before remove() clears the PK
-      try {
-        await this.b2StorageService.deleteFiles([
-          file.b2FilePath,
-          file.b2ThumbSmallPath,
-          file.b2ThumbMediumPath,
-          file.b2ThumbLargePath,
-        ]);
-      } catch (error) {
-        this.logger.error(`Failed to delete file from B2: ${fileId}`, error);
-      }
-      await this.filesRepository.remove(file);
-      deletedIds.push(fileId);
-    }
+    await this.filesRepository.remove(files);
+
+    const deletedIds = files.map((f) => f.id);
 
     await this.cacheService.incrementVersion(userId, 'files');
 
