@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   Query,
+  Res,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
@@ -14,6 +15,7 @@ import {
   UploadedFile,
   BadRequestException,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -294,6 +296,56 @@ export class FilesController {
       page: query.page,
       limit: query.limit,
     });
+  }
+
+  /**
+   * Proxy-download encrypted content for a file variant.
+   *
+   * Variants:
+   *   - `file`         → the original encrypted blob
+   *   - `thumb-small`  → 150 px encrypted thumbnail
+   *   - `thumb-medium` → 800 px encrypted thumbnail
+   *   - `thumb-large`  → 1600 px encrypted thumbnail
+   *
+   * The backend fetches the bytes from B2 and streams them back to the
+   * client with the raw encrypted payload. Zero-knowledge is preserved —
+   * the client still decrypts locally with its master key. This endpoint
+   * is required for mobile clients on restricted networks (emulators,
+   * corporate VPNs) that cannot reach B2 directly.
+   *
+   * Declared **before** `@Get(':id')` so NestJS matches the more specific
+   * path first.
+   */
+  @Get(':id/content/:variant')
+  @ApiOperation({
+    summary: 'Download encrypted content',
+    description:
+      'Streams encrypted bytes for the requested variant through the backend.',
+  })
+  @ApiParam({ name: 'id', description: 'File UUID' })
+  @ApiParam({
+    name: 'variant',
+    description: 'file | thumb-small | thumb-medium | thumb-large',
+  })
+  async downloadContent(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) fileId: string,
+    @Param('variant') variant: string,
+    @Res() res: Response,
+  ) {
+    const allowed = ['file', 'thumb-small', 'thumb-medium', 'thumb-large'];
+    if (!allowed.includes(variant)) {
+      throw new BadRequestException('Invalid variant');
+    }
+    const { bytes } = await this.filesService.downloadContent(
+      fileId,
+      authUser.userId,
+      variant as 'file' | 'thumb-small' | 'thumb-medium' | 'thumb-large',
+    );
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', bytes.length.toString());
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.status(HttpStatus.OK).end(bytes);
   }
 
   /**

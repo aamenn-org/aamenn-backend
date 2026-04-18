@@ -485,6 +485,67 @@ export class FilesService {
   }
 
   /**
+   * Resolve a file variant (`file` | `thumb-small` | `thumb-medium` |
+   * `thumb-large`) into the B2 path + encrypted mime type, after verifying
+   * ownership. Throws `NotFoundException` if the requested variant is not
+   * present on the file record (e.g. mobile-uploaded file without thumbs).
+   */
+  async resolveContentSource(
+    fileId: string,
+    userId: string,
+    variant: 'file' | 'thumb-small' | 'thumb-medium' | 'thumb-large',
+  ): Promise<{ b2Path: string; mimeType: string; sizeBytes: number | null }> {
+    const file = await this.filesRepository.findOne({
+      where: { id: fileId, deletedAt: IsNull() },
+    });
+    if (!file) throw new NotFoundException('File not found');
+    if (file.userId !== userId) throw new ForbiddenException('Access denied');
+
+    let b2Path: string | null | undefined;
+    switch (variant) {
+      case 'file':
+        b2Path = file.b2FilePath;
+        break;
+      case 'thumb-small':
+        b2Path = file.b2ThumbSmallPath;
+        break;
+      case 'thumb-medium':
+        b2Path = file.b2ThumbMediumPath;
+        break;
+      case 'thumb-large':
+        b2Path = file.b2ThumbLargePath;
+        break;
+    }
+    if (!b2Path) throw new NotFoundException('Variant not available');
+
+    return {
+      b2Path,
+      mimeType: file.mimeType || 'application/octet-stream',
+      sizeBytes: file.sizeBytes ?? null,
+    };
+  }
+
+  /**
+   * Proxy-download an encrypted file / thumbnail variant from B2 through
+   * the backend. Returns the raw encrypted bytes — the client is still
+   * responsible for decrypting with its master key (zero-knowledge
+   * guarantee preserved).
+   */
+  async downloadContent(
+    fileId: string,
+    userId: string,
+    variant: 'file' | 'thumb-small' | 'thumb-medium' | 'thumb-large',
+  ): Promise<{ bytes: Buffer; mimeType: string }> {
+    const { b2Path, mimeType } = await this.resolveContentSource(
+      fileId,
+      userId,
+      variant,
+    );
+    const bytes = await this.b2StorageService.downloadBytes(b2Path);
+    return { bytes, mimeType };
+  }
+
+  /**
    * Get file metadata and download URL.
    * Verifies ownership before returning data.
    */

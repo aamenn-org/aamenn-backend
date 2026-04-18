@@ -200,6 +200,44 @@ export class B2StorageService implements IStorageService, OnModuleInit {
   }
 
   /**
+   * Download raw bytes from B2 to the backend (proxy download).
+   *
+   * Why this exists: mobile clients on restricted networks (emulators,
+   * corporate VPN, captive portals) often cannot reach B2 directly even
+   * though they can reach the API backend. Streaming encrypted bytes
+   * through the backend also removes the B2 `Authorization` token from
+   * the URL visible to the client, which is a strict security win.
+   *
+   * Performs a single GET against the pre-authed signed download URL and
+   * returns the full response body as a Buffer. A 60-second hard timeout
+   * prevents the backend request from hanging on B2 stalls.
+   */
+  async downloadBytes(b2FilePath: string): Promise<Buffer> {
+    try {
+      const signedUrl = `${this.downloadUrl}/file/${this.bucketName}/${b2FilePath}?Authorization=${this.authToken}`;
+      const response = await fetch(signedUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Re-auth and retry once on expired token.
+          await this.authorize();
+          return this.downloadBytes(b2FilePath);
+        }
+        throw new Error(`B2 download failed: ${response.status}`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to download bytes from B2 (${b2FilePath}): ${error?.message ?? error}`,
+      );
+      throw new InternalServerErrorException('Failed to download file');
+    }
+  }
+
+  /**
    * Upload file directly to B2 (proxy upload through backend).
    * This avoids CORS issues by uploading through the backend.
    * Note: Each upload needs a fresh upload URL - B2 doesn't allow concurrent uploads with same token.
