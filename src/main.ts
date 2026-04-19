@@ -26,8 +26,8 @@ async function bootstrap() {
   // PayloadTooLargeError when large requests accidentally hit the JSON parser.
   // Multipart uploads are handled by multer (FileInterceptor) which has its own
   // 2GB limit, but this covers any edge cases where Content-Type is misconfigured.
-  app.use(json({ limit: '50mb' }));
-  app.use(urlencoded({ extended: true, limit: '50mb' }));
+  app.use(json({ limit: '500mb' }));
+  app.use(urlencoded({ extended: true, limit: '500mb' }));
 
   // Security middleware with strict CSP
   app.use(
