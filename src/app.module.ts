@@ -16,6 +16,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { SharesModule } from './modules/shares/shares.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 
 import { User } from './database/entities/user.entity';
 import { UserSecurity } from './database/entities/user-security.entity';
@@ -26,6 +27,9 @@ import { ShareLink } from './database/entities/share-link.entity';
 import { Contact } from './database/entities/contact.entity';
 import { Folder } from './database/entities/folder.entity';
 import { UploadSession } from './database/entities/upload-session.entity';
+import { Plan } from './database/entities/plan.entity';
+import { Subscription } from './database/entities/subscription.entity';
+import { Payment } from './database/entities/payment.entity';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import {
@@ -38,6 +42,7 @@ import {
   googleConfig,
   mailConfig,
   redisConfig,
+  paymobConfig,
 } from './config/configuration';
 
 @Module({
@@ -56,6 +61,7 @@ import {
         googleConfig,
         mailConfig,
         redisConfig,
+        paymobConfig,
       ],
     }),
 
@@ -67,18 +73,18 @@ import {
         // TypeORM synchronize can DROP COLUMNS and TABLES on schema changes
         // Always use migrations for schema changes
         const nodeEnv = configService.get<string>('NODE_ENV', 'development');
-        
+
         // Explicit guard: synchronize is NEVER allowed
         const synchronize = false;
-        
+
         // Log warning if someone tries to enable it via env var
         if (configService.get<string>('TYPEORM_SYNCHRONIZE') === 'true') {
           throw new Error(
             'CRITICAL ERROR: TypeORM synchronize is explicitly disabled for safety. ' +
-            'Use migrations instead. Remove TYPEORM_SYNCHRONIZE from environment variables.'
+              'Use migrations instead. Remove TYPEORM_SYNCHRONIZE from environment variables.',
           );
         }
-        
+
         return {
           type: 'postgres',
           host: configService.get<string>('DATABASE_HOST', 'localhost'),
@@ -86,7 +92,20 @@ import {
           username: configService.get<string>('DATABASE_USERNAME', 'postgres'),
           password: configService.get<string>('DATABASE_PASSWORD'),
           database: configService.get<string>('DATABASE_NAME', 'aamenn_vault'),
-          entities: [User, UserSecurity, File, DownloadLog, RefreshToken, ShareLink, Contact, Folder, UploadSession],
+          entities: [
+            User,
+            UserSecurity,
+            File,
+            DownloadLog,
+            RefreshToken,
+            ShareLink,
+            Contact,
+            Folder,
+            UploadSession,
+            Plan,
+            Subscription,
+            Payment,
+          ],
           synchronize, // Always false
           logging: nodeEnv === 'development' ? ['error', 'warn'] : false,
           ssl:
@@ -134,6 +153,7 @@ import {
     SharesModule,
     ContactsModule,
     UploadsModule,
+    PaymentsModule,
   ],
   providers: [
     // Global rate limiting guard

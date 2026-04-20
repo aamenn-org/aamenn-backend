@@ -5,9 +5,10 @@ import { AdminService } from './admin.service';
 import { User } from '../../database/entities/user.entity';
 import { File } from '../../database/entities/file.entity';
 import { DownloadLog } from '../../database/entities/download-log.entity';
+import { Plan } from '../../database/entities/plan.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, File, DownloadLog])],
+  imports: [TypeOrmModule.forFeature([User, File, DownloadLog, Plan])],
   controllers: [AdminController],
   providers: [AdminService],
   exports: [AdminService],

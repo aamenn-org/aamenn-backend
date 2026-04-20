@@ -21,7 +21,12 @@ import {
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { AdminGuard } from '../../common/guards';
-import { AdminUsersQueryDto, UpdateUserStatusDto, SetUserStorageLimitDto } from './dto';
+import {
+  AdminUsersQueryDto,
+  UpdateUserStatusDto,
+  SetUserStorageLimitDto,
+  UpdatePlanDto,
+} from './dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -68,7 +73,6 @@ export class AdminController {
     return this.adminService.getUsers(query);
   }
 
-
   /**
    * Set per-user storage limit
    */
@@ -76,18 +80,25 @@ export class AdminController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Set user storage limit',
-    description: 'Set the storage quota for a specific user (1–1024 GB). Defaults to 5 GB.',
+    description:
+      'Set the storage quota for a specific user (1–1024 GB). Defaults to 5 GB.',
   })
   @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, description: 'Storage limit updated' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
-  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Cannot modify admin users' })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: 'Cannot modify admin users',
+  })
   async setUserStorageLimit(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: SetUserStorageLimitDto,
   ) {
     try {
-      const user = await this.adminService.setUserStorageLimit(userId, dto.storageLimitGb);
+      const user = await this.adminService.setUserStorageLimit(
+        userId,
+        dto.storageLimitGb,
+      );
       return { id: user.id, storageLimitGb: user.storageLimitGb };
     } catch (error) {
       if (error.message === 'User not found') {
@@ -110,7 +121,10 @@ export class AdminController {
   @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, description: 'User deleted' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
-  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Cannot delete admin users' })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: 'Cannot delete admin users',
+  })
   async deleteUser(@Param('userId', ParseUUIDPipe) userId: string) {
     try {
       return await this.adminService.deleteUser(userId);
@@ -208,5 +222,43 @@ export class AdminController {
   })
   async getAlerts() {
     return this.adminService.getAlerts();
+  }
+
+  // ─── Plan Management ─────────────────────────────────────────────
+
+  @Get('plans')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get all plans',
+    description:
+      'Returns all storage plans (including inactive ones) for admin management.',
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'List of plans' })
+  async getPlans() {
+    return this.adminService.getAllPlans();
+  }
+
+  @Patch('plans/:planId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Update a plan',
+    description:
+      'Update plan details: display name, price, storage, duration, or active status.',
+  })
+  @ApiParam({ name: 'planId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Plan updated' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Plan not found' })
+  async updatePlan(
+    @Param('planId', ParseUUIDPipe) planId: string,
+    @Body() dto: UpdatePlanDto,
+  ) {
+    try {
+      return await this.adminService.updatePlan(planId, dto);
+    } catch (error) {
+      if (error.message === 'Plan not found') {
+        throw new NotFoundException('Plan not found');
+      }
+      throw error;
+    }
   }
 }
