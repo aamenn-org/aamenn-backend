@@ -76,6 +76,15 @@ export class User {
   @Column({ type: 'timestamp', nullable: true, name: 'google_token_expires_at' })
   googleTokenExpiresAt: Date | null;
 
+  @Column({ type: 'varchar', length: 45, nullable: true, name: 'signup_ip' })
+  signupIp: string | null;
+
+  @Column({ type: 'varchar', length: 128, nullable: true, name: 'signup_fingerprint' })
+  signupFingerprint: string | null;
+
+  @Column({ type: 'boolean', name: 'signup_flagged', default: false })
+  signupFlagged: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

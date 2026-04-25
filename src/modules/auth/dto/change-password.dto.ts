@@ -1,4 +1,4 @@
-import { IsString, MinLength, IsNotEmpty, IsOptional, IsObject, ValidateNested } from 'class-validator';
+import { IsString, MinLength, IsNotEmpty, IsOptional, IsObject, ValidateNested, Matches } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -33,6 +33,10 @@ export class ChangePasswordDto {
   @ApiProperty({ description: 'New password (min 8 chars)', minLength: 8 })
   @IsString()
   @MinLength(8)
+  @Matches(/[A-Z]/, { message: 'Password must contain at least one uppercase letter' })
+  @Matches(/[a-z]/, { message: 'Password must contain at least one lowercase letter' })
+  @Matches(/[0-9]/, { message: 'Password must contain at least one number' })
+  @Matches(/[^A-Za-z0-9]/, { message: 'Password must contain at least one special character' })
   newPassword: string;
 
   @ApiProperty({ description: 'Master key re-encrypted with new KEK (base64)' })

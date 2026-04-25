@@ -43,11 +43,12 @@ export class OtpService {
 
   /**
    * Generate and store a 6-digit OTP.
+   * @param purpose - Key prefix to namespace OTPs (e.g. 'vault-reset', 'signup')
    */
-  async generateOtp(email: string): Promise<string> {
+  async generateOtp(email: string, purpose = 'vault-reset'): Promise<string> {
     const otp = crypto.randomInt(100000, 999999).toString();
-    const key = `vault-reset:otp:${email.toLowerCase()}`;
-    const attemptsKey = `vault-reset:otp-attempts:${email.toLowerCase()}`;
+    const key = `${purpose}:otp:${email.toLowerCase()}`;
+    const attemptsKey = `${purpose}:otp-attempts:${email.toLowerCase()}`;
 
     try {
       await this.redis.setex(key, this.otpTtl, otp);
@@ -62,10 +63,11 @@ export class OtpService {
 
   /**
    * Verify OTP with rate limiting (max 5 attempts).
+   * @param purpose - Must match the purpose used in generateOtp
    */
-  async verifyOtp(email: string, otp: string): Promise<boolean> {
-    const key = `vault-reset:otp:${email.toLowerCase()}`;
-    const attemptsKey = `vault-reset:otp-attempts:${email.toLowerCase()}`;
+  async verifyOtp(email: string, otp: string, purpose = 'vault-reset'): Promise<boolean> {
+    const key = `${purpose}:otp:${email.toLowerCase()}`;
+    const attemptsKey = `${purpose}:otp-attempts:${email.toLowerCase()}`;
 
     const attempts = parseInt(await this.redis.get(attemptsKey) || '0', 10);
     if (attempts >= 5) {
