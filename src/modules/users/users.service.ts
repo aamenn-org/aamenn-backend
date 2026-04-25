@@ -96,6 +96,13 @@ export class UsersService {
   }
 
   /**
+   * Save a user entity (for updating fields like signup metadata).
+   */
+  async saveUser(user: User): Promise<User> {
+    return this.usersRepository.save(user);
+  }
+
+  /**
    * Get storage usage for a user (delegates to FilesService).
    */
   async getStorageUsage(userId: string) {

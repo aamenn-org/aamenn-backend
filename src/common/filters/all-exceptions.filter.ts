@@ -78,8 +78,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
         
         // Handle validation errors (array of messages from class-validator)
         if (Array.isArray(responseObj.message)) {
-          message = 'Validation failed';
-          // Convert array of validation messages to field-specific details
+          // Join all validation messages into a human-readable string
+          message = responseObj.message.join('. ');
+          // Also provide field-specific details for structured handling
           details = this.parseValidationErrors(responseObj.message);
           errorType = 'VALIDATION_ERROR';
         } else {
@@ -130,6 +131,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
    * Parse validation error messages into field-specific details
    * Converts ["email must be an email", "password is too short"] 
    * to { email: "must be an email", password: "is too short" }
+   * 
+   * If multiple errors for the same field, they are joined with ". "
    */
   private parseValidationErrors(messages: string[]): Record<string, string> {
     const details: Record<string, string> = {};
@@ -139,10 +142,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const match = msg.match(/^(\w+)\s+(.+)$/);
       if (match) {
         const [, field, error] = match;
-        details[field] = error;
+        // If field already has errors, append with separator
+        if (details[field]) {
+          details[field] = `${details[field]}. ${error}`;
+        } else {
+          details[field] = error;
+        }
       } else {
         // If can't parse, use generic key
-        details.validation = msg;
+        if (details.validation) {
+          details.validation = `${details.validation}. ${msg}`;
+        } else {
+          details.validation = msg;
+        }
       }
     }
     

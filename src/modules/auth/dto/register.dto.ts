@@ -8,8 +8,11 @@ import {
   IsObject,
   ValidateNested,
   MaxLength,
+  Length,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsNotDisposableEmail } from '../../../common/validators/disposable-email.validator';
 
 /**
  * KDF parameters for key derivation
@@ -71,7 +74,17 @@ export class RegisterDto {
   })
   @IsEmail()
   @IsNotEmpty()
+  @IsNotDisposableEmail()
   email: string;
+
+  @ApiProperty({
+    description: '6-digit OTP sent to email for verification',
+    example: '123456',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @Length(6, 6)
+  emailOtp: string;
 
   @ApiProperty({
     description:
@@ -82,6 +95,10 @@ export class RegisterDto {
   @IsString()
   @IsNotEmpty()
   @MinLength(8)
+  @Matches(/[A-Z]/, { message: 'Password must contain at least one uppercase letter' })
+  @Matches(/[a-z]/, { message: 'Password must contain at least one lowercase letter' })
+  @Matches(/[0-9]/, { message: 'Password must contain at least one number' })
+  @Matches(/[^A-Za-z0-9]/, { message: 'Password must contain at least one special character' })
   password: string;
 
   @ApiProperty({
@@ -147,4 +164,12 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   encryptedRecoveryKey?: string;
+
+  @ApiPropertyOptional({
+    description: 'Device fingerprint hash for abuse detection',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  deviceFingerprint?: string;
 }
