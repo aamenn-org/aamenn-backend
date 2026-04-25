@@ -21,61 +21,16 @@ jobs:
             cd /var/www/aamenn-backend
             git fetch origin main
             git reset --hard origin/main
-            
-            # Stop existing backend container
-            docker stop aamenn-backend-api-1 2>/dev/null || true
-            docker rm aamenn-backend-api-1 2>/dev/null || true
-            
-            # Build new image
-            docker build -t aamenn-api-snapshot:latest .
-            
-            # Start new container with environment variables
-            docker run -d \
-              --name aamenn-backend-api-1 \
-              --network aamenn-backend_default \
-              -e NODE_ENV=production \
-              -e PORT=3000 \
-              -e DATABASE_HOST=aamenn-backend-postgres-1 \
-              -e DATABASE_PORT=5432 \
-              -e DATABASE_USERNAME=postgres \
-              -e DATABASE_PASSWORD=root \
-              -e DATABASE_NAME=aamenn_vault \
-              -e JWT_SECRET=tuetrue12367%4asdamoidsmv8u9hvsdvisodu87 \
-              -e JWT_ISSUER=https://aamenn-vault.com \
-              -e B2_APPLICATION_KEY_ID=0035be97edf50280000000004 \
-              -e B2_APPLICATION_KEY=K0033/Ru3w9a6WulDWj7uZ1kMMH0+tM \
-              -e B2_BUCKET_ID=459b6e39a7de7d5f95b00218 \
-              -e B2_BUCKET_NAME=Aman-App \
-              -e B2_SIGNED_URL_EXPIRATION=300 \
-              -e REDIS_HOST=aamenn-backend-redis-1 \
-              -e REDIS_PORT=6379 \
-              -e REDIS_PASSWORD=redis-pass-keyword-987 \
-              -e GOOGLE_CLIENT_ID=560785814040-9vmbfpta3jiqasqql3lrqfi7h8e94ppg.apps.googleusercontent.com \
-              -e JWT_ACCESS_EXPIRATION=90m \
-              -e JWT_REFRESH_EXPIRATION=30d \
-              -e STORAGE_LIMIT_GB=5 \
-              -e STORAGE_WARNING_THRESHOLD=80 \
-              -e SMTP_HOST=smtp.gmail.com \
-              -e SMTP_PORT=587 \
-              -e SMTP_USER=yousseffaisal20@gmail.com \
-              -e SMTP_PASS=opeizpbffdcdhfgu \
-              -e EMAIL_FROM=yousseffaisal20@gmail.com \
-              -e CORS_ORIGIN=https://web.aamenn.com,https://aamenn.com,https://www.aamenn.com \
-              -e THROTTLE_TTL=60000 \
-              -e THROTTLE_LIMIT=100 \
-              -e CACHE_TTL_ALBUMS=300 \
-              -e CACHE_TTL_FILES=600 \
-              -e CACHE_TTL_STORAGE=600 \
-              -e CACHE_TTL_DUPLICATE=9000 \
-              -e VAULT_RESET_OTP_TTL_SECONDS=600 \
-              -e VAULT_RESET_SESSION_TTL_SECONDS=900 \
-              -p 3000:3000 \
-              --restart unless-stopped \
-              aamenn-api-snapshot:latest
-            
-            # Wait for backend to be ready
-            sleep 10
-            
-            # Show logs
-            docker logs --tail=50 aamenn-backend-api-1
+
+            # Rebuild and restart API using docker compose
+            # (reads .env from disk, inherits port bindings, resource limits, healthchecks)
+            docker compose build api
+            docker compose up -d --force-recreate api
+
+            # Wait for API to pass healthcheck
+            sleep 15
+
+            # Verify healthy
+            docker ps --format "table {{.Names}}\t{{.Status}}" | grep api
+            docker logs --tail=30 aamenn-backend-api-1
             echo "Backend deployed successfully: $(git rev-parse --short HEAD)"
