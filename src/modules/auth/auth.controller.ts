@@ -3,6 +3,7 @@ import {
   Post,
   Body,
   Get,
+  Req,
   HttpCode,
   HttpStatus,
   UseGuards,
@@ -18,6 +19,7 @@ import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { Throttle } from '@nestjs/throttler';
 import { AuthThrottleGuard } from '../../common/guards/auth-throttle.guard';
+import { SignupIpLimitGuard } from '../../common/guards/signup-ip-limit.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from './interfaces/jwt-payload.interface';
 import {
@@ -33,6 +35,7 @@ import {
   VaultResetParamsDto,
   VaultResetCompleteDto,
 } from './dto';
+import { SendSignupOtpDto } from './dto/send-signup-otp.dto';
 import { ErrorResponseDto } from '../../common/dto';
 
 @ApiTags('Authentication')
@@ -40,13 +43,34 @@ import { ErrorResponseDto } from '../../common/dto';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // ==================== SIGNUP EMAIL VERIFICATION ====================
+
+  /**
+   * Send a 6-digit OTP to verify email before registration
+   */
+  @Post('register/send-otp')
+  @Public()
+  @UseGuards(AuthThrottleGuard)
+  @Throttle({ default: { limit: 3, ttl: 60000 } }) // 3 per minute per IP
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Send signup email verification OTP',
+    description: 'Sends a 6-digit OTP to the provided email for verification before registration.',
+  })
+  @ApiBody({ type: SendSignupOtpDto })
+  @ApiResponse({ status: HttpStatus.OK, description: 'OTP sent (always returns success to prevent email enumeration)' })
+  async sendSignupOtp(@Body() dto: SendSignupOtpDto) {
+    await this.authService.sendSignupOtp(dto.email);
+    return { message: 'Verification code sent to your email.' };
+  }
+
   /**
    * Register a new user with email and password
    * Stores encrypted master key for zero-knowledge encryption
    */
   @Post('register')
   @Public()
-  @UseGuards(AuthThrottleGuard)
+  @UseGuards(AuthThrottleGuard, SignupIpLimitGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 attempts per minute
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -79,8 +103,9 @@ Server stores the encrypted master key but can NEVER decrypt it.`,
     description: 'Invalid input data',
     type: ErrorResponseDto,
   })
-  async register(@Body() dto: RegisterDto): Promise<RegisterResponseDto> {
-    return this.authService.register(dto);
+  async register(@Body() dto: RegisterDto, @Req() req: any): Promise<RegisterResponseDto> {
+    const ip = req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || 'unknown';
+    return this.authService.register(dto, ip);
   }
 
   /**
