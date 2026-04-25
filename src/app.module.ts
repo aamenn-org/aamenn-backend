@@ -16,6 +16,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { SharesModule } from './modules/shares/shares.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { FeedbackModule } from './modules/feedback/feedback.module';
 
 import { User } from './database/entities/user.entity';
 import { UserSecurity } from './database/entities/user-security.entity';
@@ -26,6 +27,7 @@ import { ShareLink } from './database/entities/share-link.entity';
 import { Contact } from './database/entities/contact.entity';
 import { Folder } from './database/entities/folder.entity';
 import { UploadSession } from './database/entities/upload-session.entity';
+import { Feedback } from './database/entities/feedback.entity';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import {
@@ -86,7 +88,7 @@ import {
           username: configService.get<string>('DATABASE_USERNAME', 'postgres'),
           password: configService.get<string>('DATABASE_PASSWORD'),
           database: configService.get<string>('DATABASE_NAME', 'aamenn_vault'),
-          entities: [User, UserSecurity, File, DownloadLog, RefreshToken, ShareLink, Contact, Folder, UploadSession],
+          entities: [User, UserSecurity, File, DownloadLog, RefreshToken, ShareLink, Contact, Folder, UploadSession, Feedback],
           synchronize, // Always false
           logging: nodeEnv === 'development' ? ['error', 'warn'] : false,
           ssl:
@@ -134,6 +136,7 @@ import {
     SharesModule,
     ContactsModule,
     UploadsModule,
+    FeedbackModule,
   ],
   providers: [
     // Global rate limiting guard
