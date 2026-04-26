@@ -28,7 +28,7 @@ services:
       - EMAIL_FROM=info@aamenn.com
       - VAULT_RESET_OTP_TTL_SECONDS=600
       - VAULT_RESET_SESSION_TTL_SECONDS=900
-      - CORS_ORIGIN=https://aamenn.com,https://www.aamenn.com,https://web.aamenn.com
+      - CORS_ORIGIN=https://aamenn.com,https://www.aamenn.com,https://web.aamenn.com,chrome-extension://ghfpfjmkocnmhdednkibbdjnadhncina
     depends_on:
       postgres:
         condition: service_healthy
