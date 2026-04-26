@@ -17,6 +17,7 @@ import { MailService } from '../mail/mail.service';
 import { VaultSecurityService } from '../vault/vault-security.service';
 import { OtpService } from '../otp/otp.service';
 import { SignupAbuseService } from './signup-abuse.service';
+import { IpLookupService } from './ip-lookup.service';
 import { SignupIpLimitGuard } from '../../common/guards/signup-ip-limit.guard';
 import { RegisterDto, LoginDto, RefreshTokenDto, GoogleLoginDto, VaultResetRequestDto, VaultResetVerifyDto, VaultResetParamsDto, VaultResetCompleteDto } from './dto';
 import { TokenResponse } from './interfaces/jwt-payload.interface';
@@ -42,6 +43,7 @@ export class AuthService {
     private readonly otpService: OtpService,
     private readonly vaultSecurityService: VaultSecurityService,
     private readonly signupAbuseService: SignupAbuseService,
+    private readonly ipLookupService: IpLookupService,
     private readonly signupIpLimitGuard: SignupIpLimitGuard,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
@@ -128,6 +130,25 @@ export class AuthService {
     // Increment IP signup count (for SignupIpLimitGuard)
     this.signupIpLimitGuard.incrementSignupCount(ip).catch(err => {
       this.logger.warn('Failed to increment signup IP count:', err.message);
+    });
+
+    // Run IP type lookup (non-blocking) — flags VPN/datacenter signups
+    this.ipLookupService.lookupIp(ip).then(async (result) => {
+      try {
+        user.signupIpType = result.ipType;
+        if (result.ipType === 'vpn' || result.ipType === 'datacenter') {
+          user.signupFlagged = true;
+          this.logger.warn(
+            `Signup from ${result.ipType} IP detected for user ${user.id}: ` +
+              `ISP=${result.isp}, Org=${result.org}`,
+          );
+        }
+        await this.usersService.saveUser(user);
+      } catch (err) {
+        this.logger.warn('Failed to store IP lookup result:', err.message);
+      }
+    }).catch(err => {
+      this.logger.warn('IP lookup failed:', err.message);
     });
 
     // Run abuse detection (non-blocking)

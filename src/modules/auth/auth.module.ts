@@ -8,7 +8,9 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { SignupAbuseService } from './signup-abuse.service';
+import { IpLookupService } from './ip-lookup.service';
 import { SignupIpLimitGuard } from '../../common/guards/signup-ip-limit.guard';
+import { TurnstileGuard } from '../../common/guards/turnstile.guard';
 import { UsersModule } from '../users/users.module';
 import { VaultModule } from '../vault/vault.module';
 import { OtpModule } from '../otp/otp.module';
@@ -58,7 +60,7 @@ import { User } from '../../database/entities/user.entity';
     UsersModule,
   ],
   controllers: [AuthController],
-  providers: [JwtStrategy, JwtAuthGuard, AuthService, SignupAbuseService, SignupIpLimitGuard],
+  providers: [JwtStrategy, JwtAuthGuard, AuthService, SignupAbuseService, IpLookupService, SignupIpLimitGuard, TurnstileGuard],
   exports: [JwtAuthGuard, PassportModule, AuthService, JwtModule],
 })
 export class AuthModule {}

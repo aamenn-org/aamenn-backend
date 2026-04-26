@@ -122,11 +122,11 @@ export class SignupAbuseService {
    * Get flagged signups for admin review.
    */
   async getFlaggedSignups(): Promise<
-    Pick<User, 'id' | 'email' | 'signupIp' | 'signupFingerprint' | 'createdAt' | 'isActive'>[]
+    Pick<User, 'id' | 'email' | 'signupIp' | 'signupFingerprint' | 'signupIpType' | 'createdAt' | 'isActive'>[]
   > {
     return this.usersRepository.find({
       where: { signupFlagged: true },
-      select: ['id', 'email', 'signupIp', 'signupFingerprint', 'createdAt', 'isActive'],
+      select: ['id', 'email', 'signupIp', 'signupFingerprint', 'signupIpType', 'createdAt', 'isActive'],
       order: { createdAt: 'DESC' },
       take: 100,
     });
