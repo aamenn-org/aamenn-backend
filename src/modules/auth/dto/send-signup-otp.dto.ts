@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { IsNotDisposableEmail } from '../../../common/validators/disposable-email.validator';
 
 /**
@@ -14,4 +14,11 @@ export class SendSignupOtpDto {
   @IsNotEmpty()
   @IsNotDisposableEmail()
   email: string;
+
+  @ApiPropertyOptional({
+    description: 'Cloudflare Turnstile CAPTCHA token',
+  })
+  @IsOptional()
+  @IsString()
+  turnstileToken?: string;
 }
