@@ -658,6 +658,7 @@ export class AdminService {
       signupIp: string | null;
       signupFingerprint: string | null;
       signupFlagged: boolean;
+      signupIpType: string | null;
       createdAt: Date;
     }[];
     total: number;
@@ -678,6 +679,7 @@ export class AdminService {
         'u.signupIp',
         'u.signupFingerprint',
         'u.signupFlagged',
+        'u.signupIpType',
         'u.createdAt',
       ])
       .where('u.role = :role', { role: UserRole.USER });
@@ -710,6 +712,7 @@ export class AdminService {
         signupIp: u.signupIp,
         signupFingerprint: u.signupFingerprint,
         signupFlagged: u.signupFlagged,
+        signupIpType: u.signupIpType,
         createdAt: u.createdAt,
       })),
       total,

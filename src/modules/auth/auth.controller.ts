@@ -20,6 +20,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { Throttle } from '@nestjs/throttler';
 import { AuthThrottleGuard } from '../../common/guards/auth-throttle.guard';
 import { SignupIpLimitGuard } from '../../common/guards/signup-ip-limit.guard';
+import { TurnstileGuard } from '../../common/guards/turnstile.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from './interfaces/jwt-payload.interface';
 import {
@@ -50,7 +51,7 @@ export class AuthController {
    */
   @Post('register/send-otp')
   @Public()
-  @UseGuards(AuthThrottleGuard)
+  @UseGuards(AuthThrottleGuard, TurnstileGuard)
   @Throttle({ default: { limit: 3, ttl: 60000 } }) // 3 per minute per IP
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

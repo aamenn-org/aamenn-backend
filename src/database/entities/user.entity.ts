@@ -85,6 +85,9 @@ export class User {
   @Column({ type: 'boolean', name: 'signup_flagged', default: false })
   signupFlagged: boolean;
 
+  @Column({ type: 'varchar', length: 20, nullable: true, name: 'signup_ip_type' })
+  signupIpType: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

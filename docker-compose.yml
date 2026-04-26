@@ -28,6 +28,8 @@ services:
       - EMAIL_FROM=info@aamenn.com
       - VAULT_RESET_OTP_TTL_SECONDS=600
       - VAULT_RESET_SESSION_TTL_SECONDS=900
+      - TURNSTILE_SECRET_KEY=0x4AAAAAADDm5E8GX33N9YX1afkZXVNbiow
+      - IP_LOOKUP_ENABLED=true
       - CORS_ORIGIN=https://aamenn.com,https://www.aamenn.com,https://web.aamenn.com
     depends_on:
       postgres:
