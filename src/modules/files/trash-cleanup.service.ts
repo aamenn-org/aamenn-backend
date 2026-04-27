@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, IsNull } from 'typeorm';
 import { File } from '../../database/entities/file.entity';
 import { User } from '../../database/entities/user.entity';
 import { Folder } from '../../database/entities/folder.entity';
@@ -83,12 +83,24 @@ export class TrashCleanupService {
     );
 
     // Delete from B2 in parallel (with concurrency limit)
+    // Only delete B2 objects if no other active file record references the same path
     const batchSize = 10;
     for (let i = 0; i < expiredFiles.length; i += batchSize) {
       const batch = expiredFiles.slice(i, i + batchSize);
       await Promise.all(
         batch.map(async (file) => {
           try {
+            // Check if another user has saved a copy pointing to the same B2 path
+            const refCount = await this.filesRepository.count({
+              where: { b2FilePath: file.b2FilePath, deletedAt: IsNull() },
+            });
+            // refCount includes this file itself (still in DB), so > 1 means shared
+            if (refCount > 1) {
+              this.logger.log(
+                `Skipping B2 deletion for file ${file.id} — ${refCount - 1} other reference(s) exist`,
+              );
+              return;
+            }
             await this.b2StorageService.deleteFiles([
               file.b2FilePath,
               file.b2ThumbSmallPath,
@@ -105,7 +117,6 @@ export class TrashCleanupService {
       );
     }
 
-    
     // Remove from database
     await this.filesRepository.remove(expiredFiles);
 
