@@ -67,6 +67,13 @@ export class CreateShareDto {
   fileKeys?: Record<string, string>;
 
   @ApiPropertyOptional({
+    description: 'Re-encrypted file names: { fileId -> encryptedFilename }',
+  })
+  @IsOptional()
+  @IsObject()
+  fileNames?: Record<string, string>;
+
+  @ApiPropertyOptional({
     description: 'Expiration duration in seconds (omit for no expiration)',
     example: 86400,
   })
