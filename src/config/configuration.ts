@@ -87,3 +87,9 @@ export const paymobConfig = registerAs('paymob', () => ({
   redirectUrl: process.env.PAYMOB_REDIRECT_URL,
   gracePeriodDays: parseInt(process.env.GRACE_PERIOD_DAYS || '7', 10),
 }));
+
+export const instapayConfig = registerAs('instapay', () => ({
+  enabled: process.env.INSTAPAY_ENABLED || 'false',
+  username: process.env.INSTAPAY_USERNAME || null,
+  staleHours: parseInt(process.env.INSTAPAY_STALE_HOURS || '48', 10),
+}));

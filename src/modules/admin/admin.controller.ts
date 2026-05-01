@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Post,
   Delete,
   Param,
   Body,
@@ -27,13 +28,20 @@ import {
   SetUserStorageLimitDto,
   UpdatePlanDto,
 } from './dto';
+import { InstapayService } from '../payments/instapay.service';
+import { ReviewInstapayDto } from '../payments/dto/review-instapay.dto';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
 @UseGuards(AdminGuard)
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly instapayService: InstapayService,
+  ) {}
 
   /**
    * Get dashboard overview statistics
@@ -260,5 +268,64 @@ export class AdminController {
       }
       throw error;
     }
+  }
+
+  // ─── InstaPay Verification ───────────────────────────────────────
+
+  @Get('instapay/pending')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'List pending InstaPay submissions awaiting review',
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Pending submissions' })
+  async listPendingInstapay() {
+    const submissions = await this.instapayService.getPendingPayments();
+    return { submissions };
+  }
+
+  @Get('instapay/history')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'List previously reviewed InstaPay submissions',
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Review history' })
+  async listInstapayHistory() {
+    const submissions = await this.instapayService.getReviewedHistory();
+    return { submissions };
+  }
+
+  @Get('instapay/pending/count')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get count of pending InstaPay submissions' })
+  async getPendingInstapayCount() {
+    const count = await this.instapayService.getPendingCount();
+    return { count };
+  }
+
+  @Get('instapay/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get a single InstaPay submission with screenshot' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  async getInstapaySubmission(@Param('id', ParseUUIDPipe) id: string) {
+    const submission = await this.instapayService.getDetailedView(id);
+    return { submission };
+  }
+
+  @Post('instapay/:id/review')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Approve or reject an InstaPay submission' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  async reviewInstapay(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReviewInstapayDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    const submission = await this.instapayService.reviewPayment(
+      id,
+      admin.userId,
+      dto.action,
+      dto.adminNote,
+    );
+    return { submission };
   }
 }

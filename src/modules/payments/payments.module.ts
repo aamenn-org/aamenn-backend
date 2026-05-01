@@ -6,22 +6,35 @@ import { Plan } from '../../database/entities/plan.entity';
 import { Subscription } from '../../database/entities/subscription.entity';
 import { Payment } from '../../database/entities/payment.entity';
 import { User } from '../../database/entities/user.entity';
+import { InstapayPayment } from '../../database/entities/instapay-payment.entity';
 
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { PaymobService } from './paymob.service';
+import { InstapayService } from './instapay.service';
 import { SubscriptionScheduler } from './subscription.scheduler';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Plan, Subscription, Payment, User]),
+    TypeOrmModule.forFeature([
+      Plan,
+      Subscription,
+      Payment,
+      User,
+      InstapayPayment,
+    ]),
     HttpModule.register({
       timeout: 30000,
       maxRedirects: 3,
     }),
   ],
   controllers: [PaymentsController],
-  providers: [PaymentsService, PaymobService, SubscriptionScheduler],
-  exports: [PaymentsService],
+  providers: [
+    PaymentsService,
+    PaymobService,
+    InstapayService,
+    SubscriptionScheduler,
+  ],
+  exports: [PaymentsService, InstapayService],
 })
 export class PaymentsModule {}

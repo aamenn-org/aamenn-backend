@@ -65,33 +65,36 @@ async function bootstrap() {
 
   // CORS configuration  // CORS - Strict configuration with no wildcards
   const corsOrigin = configService.get<string>('CORS_ORIGIN');
-  
+
   if (nodeEnv === 'production' && !corsOrigin) {
     throw new Error(
       'SECURITY ERROR: CORS_ORIGIN environment variable is required in production. ' +
-      'Provide a comma-separated list of allowed origins (e.g., https://app.example.com,https://www.example.com)'
+        'Provide a comma-separated list of allowed origins (e.g., https://app.example.com,https://www.example.com)',
     );
   }
-  
-  const allowedOrigins = corsOrigin 
-    ? corsOrigin.split(',').map(origin => origin.trim())
+
+  const allowedOrigins = corsOrigin
+    ? corsOrigin.split(',').map((origin) => origin.trim())
     : ['http://localhost:3000', 'http://localhost:5173']; // Dev-only defaults
-  
+
   // Validate no wildcards in production
-  if (nodeEnv === 'production' && allowedOrigins.some(origin => origin.includes('*'))) {
+  if (
+    nodeEnv === 'production' &&
+    allowedOrigins.some((origin) => origin.includes('*'))
+  ) {
     throw new Error(
       'SECURITY ERROR: Wildcard origins are not allowed in production. ' +
-      'Specify exact allowed origins in CORS_ORIGIN.'
+        'Specify exact allowed origins in CORS_ORIGIN.',
     );
   }
-  
+
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (mobile apps, Postman, etc.)
       if (!origin) {
         return callback(null, true);
       }
-      
+
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -125,6 +128,20 @@ async function bootstrap() {
         enableImplicitConversion: true,
       },
       validateCustomDecorators: true,
+      exceptionFactory: (errors) => {
+        const details = errors.map((e) => ({
+          field: e.property,
+          value: e.value,
+          constraints: e.constraints,
+        }));
+        const logger = new Logger('ValidationPipe');
+        logger.error('Validation failed: ' + JSON.stringify(details, null, 2));
+        const { BadRequestException } = require('@nestjs/common');
+        return new BadRequestException({
+          message: 'Validation failed',
+          errors: details,
+        });
+      },
     }),
   );
 

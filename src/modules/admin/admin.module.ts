@@ -6,9 +6,13 @@ import { User } from '../../database/entities/user.entity';
 import { File } from '../../database/entities/file.entity';
 import { DownloadLog } from '../../database/entities/download-log.entity';
 import { Plan } from '../../database/entities/plan.entity';
+import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, File, DownloadLog, Plan])],
+  imports: [
+    TypeOrmModule.forFeature([User, File, DownloadLog, Plan]),
+    PaymentsModule,
+  ],
   controllers: [AdminController],
   providers: [AdminService],
   exports: [AdminService],

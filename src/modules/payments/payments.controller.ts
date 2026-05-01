@@ -10,12 +10,17 @@ import {
   Logger,
   BadRequestException,
   RawBodyRequest,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
   ApiResponse,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { Request } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -23,7 +28,9 @@ import { Public } from '../../common/decorators/public.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
 import { PaymentsService } from './payments.service';
 import { PaymobService } from './paymob.service';
+import { InstapayService } from './instapay.service';
 import { InitiateCheckoutDto } from './dto/initiate-checkout.dto';
+import { SubmitInstapayDto } from './dto/submit-instapay.dto';
 import { User } from '../../database/entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -36,6 +43,7 @@ export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
     private readonly paymobService: PaymobService,
+    private readonly instapayService: InstapayService,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
   ) {}
 
@@ -121,6 +129,83 @@ export class PaymentsController {
       authUser.userId,
     );
     return { payments };
+  }
+
+  // ─── InstaPay (manual transfer flow) ──────────────────────────────
+
+  @Get('instapay/info')
+  @Public()
+  @ApiOperation({
+    summary:
+      'Get public InstaPay configuration (username, QR data URL, enabled)',
+  })
+  async getInstapayInfo() {
+    return this.instapayService.getInfo();
+  }
+
+  @Get('instapay/status')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      "Get the user's most recent InstaPay submission (pending or last reviewed)",
+  })
+  async getInstapayStatus(@CurrentUser() authUser: AuthenticatedUser) {
+    const submission = await this.instapayService.getUserLatestSubmission(
+      authUser.userId,
+    );
+    if (!submission) {
+      return { submission: null };
+    }
+    // Strip the internal B2 path from the user-facing response.
+    const { screenshotB2Path: _omit, ...safe } = submission;
+    return { submission: safe };
+  }
+
+  @Post('instapay/submit')
+  @ApiBearerAuth('JWT-auth')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(
+    FileInterceptor('screenshot', {
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['screenshot', 'planId', 'instapayReference'],
+      properties: {
+        screenshot: { type: 'string', format: 'binary' },
+        planId: { type: 'string', format: 'uuid' },
+        instapayReference: { type: 'string' },
+        senderName: { type: 'string' },
+      },
+    },
+  })
+  @ApiOperation({ summary: 'Submit InstaPay transfer proof for verification' })
+  async submitInstapay(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @UploadedFile()
+    file: {
+      buffer: Buffer;
+      size: number;
+      mimetype: string;
+      originalname: string;
+    },
+    @Body() dto: SubmitInstapayDto,
+  ) {
+    const submission = await this.instapayService.submitPayment(
+      authUser.userId,
+      dto.planId,
+      file,
+      dto.instapayReference,
+      dto.senderName,
+    );
+    return {
+      id: submission.id,
+      status: submission.status,
+      createdAt: submission.createdAt,
+    };
   }
 
   // ─── Paymob Webhook (server-to-server) ─────────────────────────────

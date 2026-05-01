@@ -247,7 +247,7 @@ export class PaymentsService {
 
   // ─── Subscription Activation ───────────────────────────────────────
 
-  private async activateSubscription(payment: Payment): Promise<void> {
+  async activateSubscription(payment: Payment): Promise<void> {
     const plan = payment.plan || (await this.getPlanById(payment.planId));
     const now = new Date();
     const periodEnd = new Date(now);

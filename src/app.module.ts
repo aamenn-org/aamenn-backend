@@ -30,6 +30,7 @@ import { UploadSession } from './database/entities/upload-session.entity';
 import { Plan } from './database/entities/plan.entity';
 import { Subscription } from './database/entities/subscription.entity';
 import { Payment } from './database/entities/payment.entity';
+import { InstapayPayment } from './database/entities/instapay-payment.entity';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import {
@@ -43,6 +44,7 @@ import {
   mailConfig,
   redisConfig,
   paymobConfig,
+  instapayConfig,
 } from './config/configuration';
 
 @Module({
@@ -62,6 +64,7 @@ import {
         mailConfig,
         redisConfig,
         paymobConfig,
+        instapayConfig,
       ],
     }),
 
@@ -105,6 +108,7 @@ import {
             Plan,
             Subscription,
             Payment,
+            InstapayPayment,
           ],
           synchronize, // Always false
           logging: nodeEnv === 'development' ? ['error', 'warn'] : false,
