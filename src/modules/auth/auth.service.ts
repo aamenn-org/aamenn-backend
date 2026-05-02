@@ -16,6 +16,9 @@ import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 import { VaultSecurityService } from '../vault/vault-security.service';
 import { OtpService } from '../otp/otp.service';
+import { SignupAbuseService } from './signup-abuse.service';
+import { IpLookupService } from './ip-lookup.service';
+import { SignupIpLimitGuard } from '../../common/guards/signup-ip-limit.guard';
 import { RegisterDto, LoginDto, RefreshTokenDto, GoogleLoginDto, VaultResetRequestDto, VaultResetVerifyDto, VaultResetParamsDto, VaultResetCompleteDto } from './dto';
 import { TokenResponse } from './interfaces/jwt-payload.interface';
 import { UserRole } from '../../database/entities/user.entity';
@@ -39,11 +42,31 @@ export class AuthService {
     private readonly mailService: MailService,
     private readonly otpService: OtpService,
     private readonly vaultSecurityService: VaultSecurityService,
+    private readonly signupAbuseService: SignupAbuseService,
+    private readonly ipLookupService: IpLookupService,
+    private readonly signupIpLimitGuard: SignupIpLimitGuard,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepository: Repository<RefreshToken>,
   ) {}
+
+  // ==================== SIGNUP EMAIL VERIFICATION ====================
+
+  /**
+   * Send a 6-digit OTP to the provided email for signup verification.
+   * Always returns success to prevent email enumeration.
+   */
+  async sendSignupOtp(email: string): Promise<void> {
+    // Silently skip if email already registered (prevent enumeration)
+    const existingUser = await this.usersService.findUser({ email });
+    if (existingUser) {
+      return;
+    }
+
+    const otp = await this.otpService.generateOtp(email, 'signup');
+    await this.mailService.sendSignupOtpEmail(email, otp, this.otpService.getOtpTtlMinutes());
+  }
 
   /**
    * Register a new user with email and password
@@ -55,7 +78,14 @@ export class AuthService {
    */
   async register(
     dto: RegisterDto,
+    ip: string = 'unknown',
   ): Promise<TokenResponse & { userId: string }> {
+    // Verify email OTP before proceeding
+    const otpValid = await this.otpService.verifyOtp(dto.email, dto.emailOtp, 'signup');
+    if (!otpValid) {
+      throw new BadRequestException('Invalid or expired verification code');
+    }
+
     // Check if user already exists
     const existingUser = await this.usersService.findUser({ email: dto.email });
     if (existingUser) {
@@ -90,6 +120,40 @@ export class AuthService {
       recoverySalt: dto.recoverySalt,
       recoveryKdfParams: dto.recoveryKdfParams,
       encryptedRecoveryKey: dto.encryptedRecoveryKey,
+    });
+
+    // Store signup metadata for abuse detection
+    user.signupIp = ip;
+    user.signupFingerprint = dto.deviceFingerprint || null;
+    await this.usersService.saveUser(user);
+
+    // Increment IP signup count (for SignupIpLimitGuard)
+    this.signupIpLimitGuard.incrementSignupCount(ip).catch(err => {
+      this.logger.warn('Failed to increment signup IP count:', err.message);
+    });
+
+    // Run IP type lookup (non-blocking) — flags VPN/datacenter signups
+    this.ipLookupService.lookupIp(ip).then(async (result) => {
+      try {
+        user.signupIpType = result.ipType;
+        if (result.ipType === 'vpn' || result.ipType === 'datacenter') {
+          user.signupFlagged = true;
+          this.logger.warn(
+            `Signup from ${result.ipType} IP detected for user ${user.id}: ` +
+              `ISP=${result.isp}, Org=${result.org}`,
+          );
+        }
+        await this.usersService.saveUser(user);
+      } catch (err) {
+        this.logger.warn('Failed to store IP lookup result:', err.message);
+      }
+    }).catch(err => {
+      this.logger.warn('IP lookup failed:', err.message);
+    });
+
+    // Run abuse detection (non-blocking)
+    this.signupAbuseService.checkSignupAnomaly(user.id, ip, dto.deviceFingerprint).catch(err => {
+      this.logger.warn('Abuse detection failed:', err.message);
     });
 
     // Send welcome email (non-blocking)

@@ -251,6 +251,7 @@ export class UploadsService {
       fileNameEncrypted: file.fileNameEncrypted,
       mimeType: file.mimeType,
       sizeBytes: file.sizeBytes,
+      folderId: file.folderId,
       width: file.width,
       height: file.height,
       duration: file.duration,

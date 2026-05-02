@@ -27,6 +27,7 @@ import {
   UpdateUserStatusDto,
   SetUserStorageLimitDto,
   UpdatePlanDto,
+  FlaggedSignupsQueryDto
 } from './dto';
 import { InstapayService } from '../payments/instapay.service';
 import { ReviewInstapayDto } from '../payments/dto/review-instapay.dto';
@@ -265,6 +266,41 @@ export class AdminController {
     } catch (error) {
       if (error.message === 'Plan not found') {
         throw new NotFoundException('Plan not found');
+  /**
+   * Get flagged signups (abuse detection)
+   */
+  @Get('flagged-signups')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get flagged signups',
+    description:
+      'Returns paginated list of users flagged during signup for potential abuse (duplicate fingerprints, IP patterns).',
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'List of flagged signups' })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Admin access required' })
+  async getFlaggedSignups(@Query() query: FlaggedSignupsQueryDto) {
+    return this.adminService.getFlaggedSignups(query);
+  }
+
+  /**
+   * Resolve (unflag) a flagged signup
+   */
+  @Patch('flagged-signups/:userId/resolve')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Resolve a flagged signup',
+    description: 'Marks a flagged signup as reviewed/resolved (unflagged).',
+  })
+  @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Signup resolved' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Admin access required' })
+  async resolveFlaggedSignup(@Param('userId', ParseUUIDPipe) userId: string) {
+    try {
+      return await this.adminService.resolveFlaggedUser(userId);
+    } catch (error) {
+      if (error.message === 'User not found') {
+        throw new NotFoundException('User not found');
       }
       throw error;
     }

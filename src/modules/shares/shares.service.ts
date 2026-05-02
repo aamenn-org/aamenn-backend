@@ -48,12 +48,16 @@ export class SharesService {
       ? new Date(Date.now() + dto.expiresInSeconds * 1000)
       : null;
 
+    const metadata: Record<string, unknown> = {};
+    if (dto.fileKeys) metadata.fileKeys = dto.fileKeys;
+    if (dto.fileNames) metadata.fileNames = dto.fileNames;
+
     const shareLink = this.shareLinkRepository.create({
       slug,
       ownerUserId: userId,
       items: dto.items,
       shareKey: dto.shareKey,
-      metadata: dto.fileKeys ? { fileKeys: dto.fileKeys } : null,
+      metadata: Object.keys(metadata).length > 0 ? metadata : null,
       expiresAt,
     });
 
@@ -94,6 +98,7 @@ export class SharesService {
   async resolveShare(slug: string): Promise<ResolveShareResponseDto> {
     const share = await this.findActiveShare(slug);
     const fileKeys = (share.metadata?.fileKeys as Record<string, string>) ?? {};
+    const fileNames = (share.metadata?.fileNames as Record<string, string>) ?? {};
 
     const items = await Promise.all(
       share.items.map((item) => this.resolveRootItem(item)),
@@ -102,6 +107,7 @@ export class SharesService {
     return {
       shareKey: share.shareKey,
       fileKeys,
+      fileNames,
       items: items.filter((i): i is SharedRootItem => i !== null),
     };
   }
@@ -145,6 +151,64 @@ export class SharesService {
       nameEncrypted: folder.nameEncrypted,
       items: [...folderItems, ...fileItems],
     };
+  }
+
+  async saveToAccount(
+    slug: string,
+    userId: string,
+    files: { originalFileId: string; cipherFileKey: string; fileNameEncrypted: string }[],
+  ): Promise<{ success: boolean; savedCount: number }> {
+    const share = await this.findActiveShare(slug);
+    const fileKeys = (share.metadata?.fileKeys as Record<string, string>) ?? {};
+
+    // Validate all requested files exist and belong to this share
+    let savedCount = 0;
+    for (const item of files) {
+      // The file must have an entry in the share's fileKeys
+      if (!fileKeys[item.originalFileId]) {
+        this.logger.warn(
+          `saveToAccount: fileId ${item.originalFileId} not in share fileKeys — skipping`,
+        );
+        continue;
+      }
+
+      const originalFile = await this.fileRepository.findOne({
+        where: { id: item.originalFileId, deletedAt: IsNull() },
+      });
+      if (!originalFile) continue;
+
+      // Check if user already has a copy of this exact B2 file
+      const existing = await this.fileRepository.findOne({
+        where: { userId, b2FilePath: originalFile.b2FilePath, deletedAt: IsNull() },
+      });
+      if (existing) {
+        savedCount++;
+        continue; // Already saved
+      }
+
+      // Create a new File record for the saving user, pointing to the same B2 objects
+      const newFile = this.fileRepository.create({
+        userId,
+        fileNameEncrypted: item.fileNameEncrypted,
+        cipherFileKey: item.cipherFileKey,
+        mimeType: originalFile.mimeType,
+        sizeBytes: originalFile.sizeBytes,
+        width: originalFile.width,
+        height: originalFile.height,
+        duration: originalFile.duration,
+        b2FilePath: originalFile.b2FilePath,
+        b2ThumbSmallPath: originalFile.b2ThumbSmallPath,
+        b2ThumbMediumPath: originalFile.b2ThumbMediumPath,
+        b2ThumbLargePath: originalFile.b2ThumbLargePath,
+        contentHash: originalFile.contentHash,
+        folderId: null, // Save to root
+      });
+
+      await this.fileRepository.save(newFile);
+      savedCount++;
+    }
+
+    return { success: true, savedCount };
   }
 
   private async findActiveShare(slug: string): Promise<ShareLink> {

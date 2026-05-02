@@ -17,6 +17,7 @@ import { SharesModule } from './modules/shares/shares.module';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { FeedbackModule } from './modules/feedback/feedback.module';
 
 import { User } from './database/entities/user.entity';
 import { UserSecurity } from './database/entities/user-security.entity';
@@ -31,6 +32,7 @@ import { Plan } from './database/entities/plan.entity';
 import { Subscription } from './database/entities/subscription.entity';
 import { Payment } from './database/entities/payment.entity';
 import { InstapayPayment } from './database/entities/instapay-payment.entity';
+import { Feedback } from './database/entities/feedback.entity';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import {
@@ -109,6 +111,7 @@ import {
             Subscription,
             Payment,
             InstapayPayment,
+            Feedback
           ],
           synchronize, // Always false
           logging: nodeEnv === 'development' ? ['error', 'warn'] : false,
@@ -158,6 +161,7 @@ import {
     ContactsModule,
     UploadsModule,
     PaymentsModule,
+    FeedbackModule,
   ],
   providers: [
     // Global rate limiting guard

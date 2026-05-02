@@ -300,6 +300,7 @@ export class FilesService {
       fileNameEncrypted: file.fileNameEncrypted,
       mimeType: file.mimeType,
       sizeBytes: file.sizeBytes,
+      folderId: file.folderId,
       width: file.width,
       height: file.height,
       duration: file.duration,
@@ -883,6 +884,20 @@ export class FilesService {
   }
 
   /**
+   * Returns true if any other active (non-deleted) file record references the same B2 path.
+   * Used before hard-deleting B2 objects to protect shared copies.
+   */
+  private async hasOtherActiveReferences(b2FilePath: string, excludeFileId: string): Promise<boolean> {
+    const count = await this.filesRepository
+      .createQueryBuilder('f')
+      .where('f.b2FilePath = :path', { path: b2FilePath })
+      .andWhere('f.id != :id', { id: excludeFileId })
+      .andWhere('f.deleted_at IS NULL')
+      .getCount();
+    return count > 0;
+  }
+
+  /**
    * Permanently delete a file from B2 storage and database.
    * Can target both active and trashed files.
    */
@@ -898,14 +913,17 @@ export class FilesService {
       throw new NotFoundException('File not found');
     }
 
-    // Delete from B2 storage (main file + thumbnails in parallel)
+    // Delete from B2 storage only if no other active copy references the same path
     try {
-      await this.b2StorageService.deleteFiles([
-        file.b2FilePath,
-        file.b2ThumbSmallPath,
-        file.b2ThumbMediumPath,
-        file.b2ThumbLargePath,
-      ]);
+      const shared = await this.hasOtherActiveReferences(file.b2FilePath, file.id);
+      if (!shared) {
+        await this.b2StorageService.deleteFiles([
+          file.b2FilePath,
+          file.b2ThumbSmallPath,
+          file.b2ThumbMediumPath,
+          file.b2ThumbLargePath,
+        ]);
+      }
     } catch (error) {
       this.logger.error(`Failed to delete file from B2: ${file.id}`, error);
       // Continue with database deletion even if B2 fails
@@ -936,16 +954,19 @@ export class FilesService {
       throw new NotFoundException('No files found to delete');
     }
 
-    // Delete from B2 in parallel
+    // Delete from B2 in parallel (skip if another user's copy references same path)
     await Promise.all(
       files.map(async (file) => {
         try {
-          await this.b2StorageService.deleteFiles([
-            file.b2FilePath,
-            file.b2ThumbSmallPath,
-            file.b2ThumbMediumPath,
-            file.b2ThumbLargePath,
-          ]);
+          const shared = await this.hasOtherActiveReferences(file.b2FilePath, file.id);
+          if (!shared) {
+            await this.b2StorageService.deleteFiles([
+              file.b2FilePath,
+              file.b2ThumbSmallPath,
+              file.b2ThumbMediumPath,
+              file.b2ThumbLargePath,
+            ]);
+          }
         } catch (error) {
           this.logger.error(`Failed to delete file from B2: ${file.id}`, error);
         }
@@ -982,7 +1003,7 @@ export class FilesService {
       return { deletedIds: [], remaining: 0 };
     }
 
-    // Delete all B2 assets in parallel, then bulk-remove from DB in one query
+    // Delete B2 assets in parallel, skipping any that have other active references
     await Promise.all(
       files.map((file) =>
         this.b2StorageService
@@ -999,6 +1020,21 @@ export class FilesService {
             ),
           ),
       ),
+      files.map(async (file) => {
+        try {
+          const shared = await this.hasOtherActiveReferences(file.b2FilePath, file.id);
+          if (!shared) {
+            await this.b2StorageService.deleteFiles([
+              file.b2FilePath,
+              file.b2ThumbSmallPath,
+              file.b2ThumbMediumPath,
+              file.b2ThumbLargePath,
+            ]);
+          }
+        } catch (error) {
+          this.logger.error(`Failed to delete file from B2: ${file.id}`, error);
+        }
+      }),
     );
 
     await this.filesRepository.remove(files);

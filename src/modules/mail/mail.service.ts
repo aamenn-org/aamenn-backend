@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { welcomeEmailTemplate } from './templates/welcome.template';
 import { otpEmailTemplate } from './templates/otp.template';
+import { signupOtpEmailTemplate } from './templates/signup-otp.template';
 
 @Injectable()
 export class MailService implements OnModuleInit {
@@ -78,6 +79,32 @@ export class MailService implements OnModuleInit {
     } else {
       // Fallback: log to console in development
       this.logger.warn(`[FALLBACK] OTP for ${email}: ${otp}`);
+    }
+  }
+
+  /**
+   * Send OTP email for signup email verification.
+   */
+  async sendSignupOtpEmail(email: string, otp: string, ttlMinutes: number): Promise<void> {
+    const html = signupOtpEmailTemplate(otp, ttlMinutes);
+
+    if (this.transporter) {
+      try {
+        await this.transporter.sendMail({
+          from: this.emailFrom,
+          to: email,
+          subject: 'Aamenn — Verify Your Email',
+          html,
+        });
+        this.logger.log(`Signup OTP email sent to: ${email}`);
+      } catch (error) {
+        this.logger.error('Signup OTP email sending failed:', error.message);
+        // Fallback to console
+        this.logger.warn(`[FALLBACK] Signup OTP for ${email}: ${otp}`);
+      }
+    } else {
+      // Fallback: log to console in development
+      this.logger.warn(`[FALLBACK] Signup OTP for ${email}: ${otp}`);
     }
   }
 

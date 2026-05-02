@@ -8,6 +8,7 @@ import { DownloadLog } from '../../database/entities/download-log.entity';
 import { Plan } from '../../database/entities/plan.entity';
 import { AdminUsersQueryDto, UserSortBy } from './dto/admin-users-query.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import { FlaggedSignupsQueryDto, FlaggedSortBy } from './dto/flagged-signups-query.dto';
 import { B2StorageService } from '../storage/b2-storage.service';
 
 /**
@@ -695,5 +696,97 @@ export class AdminService {
     }
 
     return this.plansRepository.save(plan);
+  /**
+   * Get paginated list of flagged signups (abuse detection)
+   */
+  async getFlaggedSignups(query: FlaggedSignupsQueryDto): Promise<{
+    users: {
+      id: string;
+      email: string;
+      displayName: string | null;
+      isActive: boolean;
+      signupIp: string | null;
+      signupFingerprint: string | null;
+      signupFlagged: boolean;
+      signupIpType: string | null;
+      createdAt: Date;
+    }[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const { page = 1, limit = 20, sortBy, sortOrder, includeResolved } = query;
+    const skip = (page - 1) * limit;
+
+    const qb = this.usersRepository
+      .createQueryBuilder('u')
+      .select([
+        'u.id',
+        'u.email',
+        'u.displayName',
+        'u.isActive',
+        'u.signupIp',
+        'u.signupFingerprint',
+        'u.signupFlagged',
+        'u.signupIpType',
+        'u.createdAt',
+      ])
+      .where('u.role = :role', { role: UserRole.USER });
+
+    if (!includeResolved) {
+      qb.andWhere('u.signupFlagged = :flagged', { flagged: true });
+    } else {
+      // Show users that have signup metadata (flagged or with fingerprint/IP)
+      qb.andWhere(
+        '(u.signupFlagged = true OR u.signupFingerprint IS NOT NULL OR u.signupIp IS NOT NULL)',
+      );
+    }
+
+    // Sorting
+    const dir: 'ASC' | 'DESC' = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+    if (sortBy === FlaggedSortBy.EMAIL) {
+      qb.orderBy('u.email', dir);
+    } else {
+      qb.orderBy('u.createdAt', dir);
+    }
+
+    const [users, total] = await qb.skip(skip).take(limit).getManyAndCount();
+
+    return {
+      users: users.map((u) => ({
+        id: u.id,
+        email: u.email,
+        displayName: u.displayName,
+        isActive: u.isActive,
+        signupIp: u.signupIp,
+        signupFingerprint: u.signupFingerprint,
+        signupFlagged: u.signupFlagged,
+        signupIpType: u.signupIpType,
+        createdAt: u.createdAt,
+      })),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * Resolve (unflag) a flagged signup — marks as reviewed
+   */
+  async resolveFlaggedUser(userId: string): Promise<{ id: string; signupFlagged: boolean }> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    user.signupFlagged = false;
+    await this.usersRepository.save(user);
+
+    this.logger.log(`Admin resolved flagged signup for user ${userId} (${user.email})`);
+
+    return { id: user.id, signupFlagged: false };
   }
 }

@@ -90,6 +90,7 @@ export type SharedRootItem = SharedFileItem | SharedFolderItem;
 export interface ResolveShareResponseDto {
   shareKey: string;
   fileKeys: Record<string, string>;
+  fileNames: Record<string, string>;
   items: SharedRootItem[];
 }
 

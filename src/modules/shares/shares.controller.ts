@@ -23,6 +23,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
 import { CreateShareDto } from './dto/create-share.dto';
+import { SaveToAccountDto, SaveToAccountResponseDto } from './dto/save-to-account.dto';
 import { ListSharesQueryDto } from './dto/list-shares-query.dto';
 import {
   CreateShareResponseDto,
@@ -115,6 +116,24 @@ export class SharesController {
     @Param('id', ParseUUIDPipe) shareId: string,
   ): Promise<RevokeShareResponseDto> {
     return this.sharesService.revokeShare(shareId, authUser.userId);
+  }
+
+  @Post(':slug/save-to-account')
+  @ApiBearerAuth('JWT-auth')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Save shared files to own account',
+    description: 'Copies shared files into the authenticated user\'s account without re-uploading. File keys and filenames are re-encrypted with the user\'s master key on the client side.',
+  })
+  @ApiParam({ name: 'slug', description: 'Share link slug' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Files saved', type: SaveToAccountResponseDto })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Share not found', type: ErrorResponseDto })
+  async saveToAccount(
+    @CurrentUser() authUser: AuthenticatedUser,
+    @Param('slug') slug: string,
+    @Body() dto: SaveToAccountDto,
+  ): Promise<SaveToAccountResponseDto> {
+    return this.sharesService.saveToAccount(slug, authUser.userId, dto.files);
   }
 
   @Get(':slug')
