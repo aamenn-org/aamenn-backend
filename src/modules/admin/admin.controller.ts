@@ -89,7 +89,7 @@ export class AdminController {
   @ApiOperation({
     summary: 'Set user storage limit',
     description:
-      'Set the storage quota for a specific user (1–1024 GB). Defaults to 5 GB.',
+      'Set the storage quota for a specific user (1–2048 GB). Defaults to 4 GB.',
   })
   @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, description: 'Storage limit updated' })

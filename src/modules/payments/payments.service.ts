@@ -334,8 +334,8 @@ export class PaymentsService {
         sub.status = SubscriptionStatus.EXPIRED;
         await this.subscriptionRepo.save(sub);
 
-        // Downgrade user to free tier (5GB)
-        await this.userRepo.update(sub.userId, { storageLimitGb: 5 });
+        // Downgrade user to free tier (4GB)
+        await this.userRepo.update(sub.userId, { storageLimitGb: 4 });
 
         // Send downgrade notification
         const user = await this.userRepo.findOne({ where: { id: sub.userId } });
@@ -449,8 +449,8 @@ export class PaymentsService {
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #ef4444;">Storage Downgraded</h2>
             <p>Hi ${user.displayName || 'there'},</p>
-            <p>Your subscription grace period has ended and your storage has been downgraded to the free tier (5GB).</p>
-            <p><strong>Your existing files are safe</strong> — nothing has been deleted. However, you won't be able to upload new files if your storage usage exceeds 5GB.</p>
+            <p>Your subscription grace period has ended and your storage has been downgraded to the free tier (4GB).</p>
+            <p><strong>Your existing files are safe</strong> — nothing has been deleted. However, you won't be able to upload new files if your storage usage exceeds 4GB.</p>
             <p>To restore your storage, please renew your subscription.</p>
           </div>
         `,

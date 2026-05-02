@@ -86,13 +86,19 @@ export class CreatePaymentTables1774300000000 implements MigrationInterface {
       CREATE INDEX "IDX_payment_user" ON "payments" ("user_id")
     `);
 
-    // Seed the 3 storage plans
+    // Seed the storage plans
     await queryRunner.query(`
       INSERT INTO "plans" ("name", "display_name", "storage_gb", "price_egp", "price_piasters", "duration_days")
       VALUES
-        ('sentinel', 'Sentinel', 100, 50.00, 5000, 30),
-        ('guardian', 'Guardian', 500, 200.00, 20000, 30),
-        ('foundation', 'Foundation', 1024, 350.00, 35000, 30)
+        ('starter',  'Starter',  8,    7.00,    700,   30),
+        ('basic',    'Basic',    16,   13.00,   1300,  30),
+        ('plus',     'Plus',     32,   25.00,   2500,  30),
+        ('pro',      'Pro',      64,   49.00,   4900,  30),
+        ('premium',  'Premium',  128,  99.00,   9900,  30),
+        ('elite',    'Elite',    256,  195.00,  19500, 30),
+        ('ultra',    'Ultra',    512,  390.00,  39000, 30),
+        ('max',      'Max',      1024, 600.00,  60000, 30),
+        ('titan',    'Titan',    2048, 900.00,  90000, 30)
     `);
   }
 

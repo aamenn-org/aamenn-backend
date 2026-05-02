@@ -8,7 +8,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { UploadSession, CompletedPart } from '../../database/entities/upload-session.entity';
+import {
+  UploadSession,
+  CompletedPart,
+} from '../../database/entities/upload-session.entity';
 import { File } from '../../database/entities/file.entity';
 import { User } from '../../database/entities/user.entity';
 import { B2StorageService } from '../storage/b2-storage.service';
@@ -45,18 +48,21 @@ export class UploadsService {
         .where('file.userId = :userId', { userId })
         .withDeleted()
         .getRawOne<{ totalBytes: string }>(),
-      this.usersRepo.findOne({ where: { id: userId }, select: ['storageLimitGb'] }),
+      this.usersRepo.findOne({
+        where: { id: userId },
+        select: ['storageLimitGb'],
+      }),
     ]);
 
     const usedBytes = parseInt(storageResult?.totalBytes ?? '0', 10);
-    const limitGb = user?.storageLimitGb ?? 5;
+    const limitGb = user?.storageLimitGb ?? 4;
     const limitBytes = limitGb * 1024 * 1024 * 1024;
 
     if (usedBytes + dto.totalBytes > limitBytes) {
       const remainingBytes = Math.max(0, limitBytes - usedBytes);
       throw new PayloadTooLargeException(
         `Storage limit exceeded. Your limit is ${limitGb} GB. ` +
-        `You have ${(remainingBytes / (1024 * 1024 * 1024)).toFixed(2)} GB remaining.`,
+          `You have ${(remainingBytes / (1024 * 1024 * 1024)).toFixed(2)} GB remaining.`,
       );
     }
 
@@ -156,7 +162,11 @@ export class UploadsService {
    * Complete a chunked upload: finish the B2 large file and create the File entity.
    * Optionally accepts encrypted thumbnail data to upload via the proxy path.
    */
-  async completeUpload(userId: string, uploadId: string, dto: CompleteUploadDto) {
+  async completeUpload(
+    userId: string,
+    uploadId: string,
+    dto: CompleteUploadDto,
+  ) {
     const session = await this.getActiveSession(userId, uploadId);
 
     if (dto.partSha1Array.length !== session.totalParts) {
