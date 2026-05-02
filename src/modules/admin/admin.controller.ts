@@ -266,6 +266,11 @@ export class AdminController {
     } catch (error) {
       if (error.message === 'Plan not found') {
         throw new NotFoundException('Plan not found');
+      }
+      throw error;
+    }
+  }
+
   /**
    * Get flagged signups (abuse detection)
    */

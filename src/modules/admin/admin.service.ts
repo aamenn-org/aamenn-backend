@@ -696,6 +696,8 @@ export class AdminService {
     }
 
     return this.plansRepository.save(plan);
+  }
+
   /**
    * Get paginated list of flagged signups (abuse detection)
    */

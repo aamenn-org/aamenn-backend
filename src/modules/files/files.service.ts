@@ -1005,21 +1005,6 @@ export class FilesService {
 
     // Delete B2 assets in parallel, skipping any that have other active references
     await Promise.all(
-      files.map((file) =>
-        this.b2StorageService
-          .deleteFiles([
-            file.b2FilePath,
-            file.b2ThumbSmallPath,
-            file.b2ThumbMediumPath,
-            file.b2ThumbLargePath,
-          ])
-          .catch((error) =>
-            this.logger.error(
-              `Failed to delete file from B2: ${file.id}`,
-              error,
-            ),
-          ),
-      ),
       files.map(async (file) => {
         try {
           const shared = await this.hasOtherActiveReferences(file.b2FilePath, file.id);
