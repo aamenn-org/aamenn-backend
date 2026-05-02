@@ -28,6 +28,7 @@
     "deduplicate:b2": "ts-node -r tsconfig-paths/register scripts/deduplicate-b2-bucket.ts"
   },
   "dependencies": {
+    "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^3.1.1",
     "@nestjs/core": "^10.0.0",
@@ -39,6 +40,7 @@
     "@nestjs/throttler": "^5.1.1",
     "@nestjs/typeorm": "^10.0.1",
     "@types/bcrypt": "^6.0.0",
+    "axios": "^1.15.1",
     "backblaze-b2": "^1.7.0",
     "bcrypt": "^6.0.0",
     "blurhash": "^2.0.5",
@@ -54,6 +56,7 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.11.3",
+    "qrcode": "^1.5.4",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
     "sharp": "^0.34.5",
@@ -71,6 +74,7 @@
     "@types/node": "^20.3.1",
     "@types/nodemailer": "^7.0.10",
     "@types/passport-jwt": "^4.0.0",
+    "@types/qrcode": "^1.5.6",
     "@types/uuid": "^9.0.7",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",

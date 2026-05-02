@@ -12,7 +12,10 @@ export class MailService implements OnModuleInit {
   private readonly emailFrom: string;
 
   constructor(private configService: ConfigService) {
-    this.emailFrom = this.configService.get<string>('mail.from', 'noreply@aamenn.com');
+    this.emailFrom = this.configService.get<string>(
+      'mail.from',
+      'noreply@aamenn.com',
+    );
   }
 
   async onModuleInit() {
@@ -29,7 +32,7 @@ export class MailService implements OnModuleInit {
         secure: port === 465,
         auth: { user, pass },
       });
-      
+
       // Test the connection
       try {
         await this.transporter.verify();
@@ -40,15 +43,23 @@ export class MailService implements OnModuleInit {
         this.transporter = null;
       }
     } else {
-      this.logger.warn('❌ SMTP not configured — emails will be logged to console');
-      this.logger.warn(`Missing: ${!host ? 'host ' : ''}${!user ? 'user ' : ''}${!pass ? 'pass ' : ''}`);
+      this.logger.warn(
+        '❌ SMTP not configured — emails will be logged to console',
+      );
+      this.logger.warn(
+        `Missing: ${!host ? 'host ' : ''}${!user ? 'user ' : ''}${!pass ? 'pass ' : ''}`,
+      );
     }
   }
 
   /**
    * Send OTP email for vault reset.
    */
-  async sendOtpEmail(email: string, otp: string, ttlMinutes: number): Promise<void> {
+  async sendOtpEmail(
+    email: string,
+    otp: string,
+    ttlMinutes: number,
+  ): Promise<void> {
     const html = otpEmailTemplate(otp, ttlMinutes);
 
     if (this.transporter) {
@@ -118,6 +129,33 @@ export class MailService implements OnModuleInit {
     } else {
       // Fallback: log to console in development
       this.logger.warn(`[FALLBACK] Welcome email for ${email} (${userName})`);
+    }
+  }
+
+  /**
+   * Send a generic email with custom subject and HTML body.
+   */
+  async sendMail(options: {
+    to: string;
+    subject: string;
+    html: string;
+  }): Promise<void> {
+    if (this.transporter) {
+      try {
+        await this.transporter.sendMail({
+          from: this.emailFrom,
+          to: options.to,
+          subject: options.subject,
+          html: options.html,
+        });
+        this.logger.log(`Email sent to: ${options.to} — ${options.subject}`);
+      } catch (error) {
+        this.logger.error(
+          `Email sending failed to ${options.to}: ${error.message}`,
+        );
+      }
+    } else {
+      this.logger.warn(`[FALLBACK] Email to ${options.to}: ${options.subject}`);
     }
   }
 }

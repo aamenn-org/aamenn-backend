@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Post,
   Delete,
   Param,
   Body,
@@ -21,14 +22,27 @@ import {
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { AdminGuard } from '../../common/guards';
-import { AdminUsersQueryDto, UpdateUserStatusDto, SetUserStorageLimitDto, FlaggedSignupsQueryDto } from './dto';
+import {
+  AdminUsersQueryDto,
+  UpdateUserStatusDto,
+  SetUserStorageLimitDto,
+  UpdatePlanDto,
+  FlaggedSignupsQueryDto
+} from './dto';
+import { InstapayService } from '../payments/instapay.service';
+import { ReviewInstapayDto } from '../payments/dto/review-instapay.dto';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
 @UseGuards(AdminGuard)
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly instapayService: InstapayService,
+  ) {}
 
   /**
    * Get dashboard overview statistics
@@ -68,7 +82,6 @@ export class AdminController {
     return this.adminService.getUsers(query);
   }
 
-
   /**
    * Set per-user storage limit
    */
@@ -76,18 +89,25 @@ export class AdminController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Set user storage limit',
-    description: 'Set the storage quota for a specific user (1–1024 GB). Defaults to 5 GB.',
+    description:
+      'Set the storage quota for a specific user (1–2048 GB). Defaults to 4 GB.',
   })
   @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, description: 'Storage limit updated' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
-  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Cannot modify admin users' })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: 'Cannot modify admin users',
+  })
   async setUserStorageLimit(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: SetUserStorageLimitDto,
   ) {
     try {
-      const user = await this.adminService.setUserStorageLimit(userId, dto.storageLimitGb);
+      const user = await this.adminService.setUserStorageLimit(
+        userId,
+        dto.storageLimitGb,
+      );
       return { id: user.id, storageLimitGb: user.storageLimitGb };
     } catch (error) {
       if (error.message === 'User not found') {
@@ -110,7 +130,10 @@ export class AdminController {
   @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
   @ApiResponse({ status: HttpStatus.OK, description: 'User deleted' })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found' })
-  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Cannot delete admin users' })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: 'Cannot delete admin users',
+  })
   async deleteUser(@Param('userId', ParseUUIDPipe) userId: string) {
     try {
       return await this.adminService.deleteUser(userId);
@@ -210,6 +233,39 @@ export class AdminController {
     return this.adminService.getAlerts();
   }
 
+  // ─── Plan Management ─────────────────────────────────────────────
+
+  @Get('plans')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get all plans',
+    description:
+      'Returns all storage plans (including inactive ones) for admin management.',
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'List of plans' })
+  async getPlans() {
+    return this.adminService.getAllPlans();
+  }
+
+  @Patch('plans/:planId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Update a plan',
+    description:
+      'Update plan details: display name, price, storage, duration, or active status.',
+  })
+  @ApiParam({ name: 'planId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Plan updated' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Plan not found' })
+  async updatePlan(
+    @Param('planId', ParseUUIDPipe) planId: string,
+    @Body() dto: UpdatePlanDto,
+  ) {
+    try {
+      return await this.adminService.updatePlan(planId, dto);
+    } catch (error) {
+      if (error.message === 'Plan not found') {
+        throw new NotFoundException('Plan not found');
   /**
    * Get flagged signups (abuse detection)
    */
@@ -248,5 +304,64 @@ export class AdminController {
       }
       throw error;
     }
+  }
+
+  // ─── InstaPay Verification ───────────────────────────────────────
+
+  @Get('instapay/pending')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'List pending InstaPay submissions awaiting review',
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Pending submissions' })
+  async listPendingInstapay() {
+    const submissions = await this.instapayService.getPendingPayments();
+    return { submissions };
+  }
+
+  @Get('instapay/history')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'List previously reviewed InstaPay submissions',
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Review history' })
+  async listInstapayHistory() {
+    const submissions = await this.instapayService.getReviewedHistory();
+    return { submissions };
+  }
+
+  @Get('instapay/pending/count')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get count of pending InstaPay submissions' })
+  async getPendingInstapayCount() {
+    const count = await this.instapayService.getPendingCount();
+    return { count };
+  }
+
+  @Get('instapay/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get a single InstaPay submission with screenshot' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  async getInstapaySubmission(@Param('id', ParseUUIDPipe) id: string) {
+    const submission = await this.instapayService.getDetailedView(id);
+    return { submission };
+  }
+
+  @Post('instapay/:id/review')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Approve or reject an InstaPay submission' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  async reviewInstapay(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReviewInstapayDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    const submission = await this.instapayService.reviewPayment(
+      id,
+      admin.userId,
+      dto.action,
+      dto.adminNote,
+    );
+    return { submission };
   }
 }

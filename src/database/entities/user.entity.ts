@@ -63,7 +63,7 @@ export class User {
   @Column({
     type: 'integer',
     name: 'storage_limit_gb',
-    default: 5,
+    default: 4,
   })
   storageLimitGb: number;
 
@@ -73,7 +73,11 @@ export class User {
   @Column({ type: 'text', nullable: true, name: 'google_refresh_token' })
   googleRefreshToken: string | null;
 
-  @Column({ type: 'timestamp', nullable: true, name: 'google_token_expires_at' })
+  @Column({
+    type: 'timestamp',
+    nullable: true,
+    name: 'google_token_expires_at',
+  })
   googleTokenExpiresAt: Date | null;
 
   @Column({ type: 'varchar', length: 45, nullable: true, name: 'signup_ip' })
@@ -100,7 +104,6 @@ export class User {
 
   @OneToMany(() => File, (file) => file.user)
   files: File[];
-
 
   @OneToMany(() => Folder, (folder) => folder.user)
   folders: Folder[];

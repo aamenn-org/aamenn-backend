@@ -56,7 +56,10 @@ export const mailConfig = registerAs('mail', () => ({
   pass: process.env.SMTP_PASS,
   from: process.env.EMAIL_FROM || 'noreply@aamenn.com',
   otpTtlSeconds: parseInt(process.env.VAULT_RESET_OTP_TTL_SECONDS || '600', 10),
-  resetSessionTtlSeconds: parseInt(process.env.VAULT_RESET_SESSION_TTL_SECONDS || '900', 10),
+  resetSessionTtlSeconds: parseInt(
+    process.env.VAULT_RESET_SESSION_TTL_SECONDS || '900',
+    10,
+  ),
 }));
 
 export const redisConfig = registerAs('redis', () => ({
@@ -69,4 +72,24 @@ export const redisConfig = registerAs('redis', () => ({
     storage: parseInt(process.env.CACHE_TTL_STORAGE || '60', 10),
     duplicate: parseInt(process.env.CACHE_TTL_DUPLICATE || '900', 10),
   },
+}));
+
+export const paymobConfig = registerAs('paymob', () => ({
+  apiKey: process.env.PAYMOB_API_KEY,
+  publicKey: process.env.PAYMOB_PUBLIC_KEY,
+  secretKey: process.env.PAYMOB_SECRET_KEY,
+  hmacSecret: process.env.PAYMOB_HMAC_SECRET,
+  baseUrl: process.env.PAYMOB_BASE_URL || 'https://accept.paymob.com',
+  cardIntegrationId: process.env.PAYMOB_CARD_INTEGRATION_ID,
+  walletIntegrationId: process.env.PAYMOB_WALLET_INTEGRATION_ID,
+  fawryIntegrationId: process.env.PAYMOB_FAWRY_INTEGRATION_ID,
+  callbackUrl: process.env.PAYMOB_CALLBACK_URL,
+  redirectUrl: process.env.PAYMOB_REDIRECT_URL,
+  gracePeriodDays: parseInt(process.env.GRACE_PERIOD_DAYS || '7', 10),
+}));
+
+export const instapayConfig = registerAs('instapay', () => ({
+  enabled: process.env.INSTAPAY_ENABLED || 'false',
+  username: process.env.INSTAPAY_USERNAME || null,
+  staleHours: parseInt(process.env.INSTAPAY_STALE_HOURS || '48', 10),
 }));

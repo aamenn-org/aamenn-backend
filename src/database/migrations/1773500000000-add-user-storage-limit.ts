@@ -6,7 +6,7 @@ export class AddUserStorageLimit1773500000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       ALTER TABLE "users"
-      ADD COLUMN "storage_limit_gb" integer NOT NULL DEFAULT 5
+      ADD COLUMN "storage_limit_gb" integer NOT NULL DEFAULT 4
     `);
   }
 

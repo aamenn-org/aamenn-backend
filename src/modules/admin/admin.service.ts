@@ -5,6 +5,7 @@ import { Repository, MoreThanOrEqual } from 'typeorm';
 import { User, UserRole } from '../../database/entities/user.entity';
 import { File } from '../../database/entities/file.entity';
 import { DownloadLog } from '../../database/entities/download-log.entity';
+import { Plan } from '../../database/entities/plan.entity';
 import { AdminUsersQueryDto, UserSortBy } from './dto/admin-users-query.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { FlaggedSignupsQueryDto, FlaggedSortBy } from './dto/flagged-signups-query.dto';
@@ -104,6 +105,8 @@ export class AdminService {
     private filesRepository: Repository<File>,
     @InjectRepository(DownloadLog)
     private downloadLogsRepository: Repository<DownloadLog>,
+    @InjectRepository(Plan)
+    private plansRepository: Repository<Plan>,
     private b2StorageService: B2StorageService,
   ) {
     // B2 free tier is 10GB, can be overridden via env
@@ -193,9 +196,15 @@ export class AdminService {
     // File statistics (exclude avatar files, include trashed files in storage)
     const fileStats = await this.filesRepository
       .createQueryBuilder('file')
-      .select('COUNT(CASE WHEN file.deletedAt IS NULL THEN 1 END)', 'totalFiles')
+      .select(
+        'COUNT(CASE WHEN file.deletedAt IS NULL THEN 1 END)',
+        'totalFiles',
+      )
       .addSelect('COALESCE(SUM(file.sizeBytes), 0)', 'totalStorageBytes')
-      .addSelect('COALESCE(AVG(CASE WHEN file.deletedAt IS NULL THEN file.sizeBytes END), 0)', 'avgFileSize')
+      .addSelect(
+        'COALESCE(AVG(CASE WHEN file.deletedAt IS NULL THEN file.sizeBytes END), 0)',
+        'avgFileSize',
+      )
       .where('file.isAvatar = :isAvatar', { isAvatar: false })
       .withDeleted()
       .getRawOne();
@@ -310,18 +319,20 @@ export class AdminService {
 
     const rawResults = await this.usersRepository.query(dataSql, params);
 
-    const users: UserWithStats[] = rawResults.map((row: Record<string, any>) => ({
-      id: row.id,
-      email: row.email,
-      displayName: row.displayName,
-      role: row.role,
-      isActive: row.isActive,
-      createdAt: row.createdAt,
-      lastLoginAt: row.lastLoginAt,
-      fileCount: parseInt(row.file_count ?? '0', 10),
-      storageBytes: parseInt(row.storage_bytes ?? '0', 10),
-      storageLimitGb: parseInt(row.storageLimitGb ?? '5', 10),
-    }));
+    const users: UserWithStats[] = rawResults.map(
+      (row: Record<string, any>) => ({
+        id: row.id,
+        email: row.email,
+        displayName: row.displayName,
+        role: row.role,
+        isActive: row.isActive,
+        createdAt: row.createdAt,
+        lastLoginAt: row.lastLoginAt,
+        fileCount: parseInt(row.file_count ?? '0', 10),
+        storageBytes: parseInt(row.storage_bytes ?? '0', 10),
+        storageLimitGb: parseInt(row.storageLimitGb ?? '5', 10),
+      }),
+    );
 
     return {
       users,
@@ -331,7 +342,6 @@ export class AdminService {
       totalPages: Math.ceil(total / limit),
     };
   }
-
 
   /**
    * Set per-user storage limit (1–1024 GB).
@@ -455,9 +465,15 @@ export class AdminService {
     // Basic stats (exclude avatar files, include trashed files in storage)
     const basicStats = await this.filesRepository
       .createQueryBuilder('file')
-      .select('COUNT(CASE WHEN file.deletedAt IS NULL THEN 1 END)', 'totalFiles')
+      .select(
+        'COUNT(CASE WHEN file.deletedAt IS NULL THEN 1 END)',
+        'totalFiles',
+      )
       .addSelect('COALESCE(SUM(file.sizeBytes), 0)', 'totalStorageBytes')
-      .addSelect('COALESCE(AVG(CASE WHEN file.deletedAt IS NULL THEN file.sizeBytes END), 0)', 'avgFileSize')
+      .addSelect(
+        'COALESCE(AVG(CASE WHEN file.deletedAt IS NULL THEN file.sizeBytes END), 0)',
+        'avgFileSize',
+      )
       .where('file.isAvatar = :isAvatar', { isAvatar: false })
       .withDeleted()
       .getRawOne();
@@ -510,7 +526,7 @@ export class AdminService {
       .where('file.isAvatar = :isAvatar', { isAvatar: false })
       .withDeleted()
       .groupBy('file.mimeType')
-.orderBy('"totalBytes"', 'DESC')
+      .orderBy('"totalBytes"', 'DESC')
       .limit(10)
       .getRawMany();
 
@@ -646,6 +662,40 @@ export class AdminService {
     return alerts;
   }
 
+  // ─── Plan Management ─────────────────────────────────────────────
+
+  async getAllPlans(): Promise<Plan[]> {
+    return this.plansRepository.find({ order: { storageGb: 'ASC' } });
+  }
+
+  async updatePlan(
+    planId: string,
+    updates: {
+      displayName?: string;
+      storageGb?: number;
+      priceEgp?: number;
+      durationDays?: number;
+      isActive?: boolean;
+    },
+  ): Promise<Plan> {
+    const plan = await this.plansRepository.findOne({ where: { id: planId } });
+    if (!plan) {
+      throw new Error('Plan not found');
+    }
+
+    if (updates.displayName !== undefined)
+      plan.displayName = updates.displayName;
+    if (updates.storageGb !== undefined) plan.storageGb = updates.storageGb;
+    if (updates.durationDays !== undefined)
+      plan.durationDays = updates.durationDays;
+    if (updates.isActive !== undefined) plan.isActive = updates.isActive;
+
+    if (updates.priceEgp !== undefined) {
+      plan.priceEgp = updates.priceEgp;
+      plan.pricePiasters = Math.round(updates.priceEgp * 100);
+    }
+
+    return this.plansRepository.save(plan);
   /**
    * Get paginated list of flagged signups (abuse detection)
    */
