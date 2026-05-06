@@ -1,0 +1,36 @@
+[
+  {
+    "corsRuleName": "allowAllOperations",
+    "allowedOrigins": [
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "http://localhost:8080",
+      "http://127.0.0.1:5173",
+      "https://yourdomain.com",
+      "*"
+    ],
+    "allowedOperations": [
+      "b2_download_file_by_id",
+      "b2_download_file_by_name",
+      "b2_upload_file",
+      "b2_upload_part",
+      "s3_delete",
+      "s3_get",
+      "s3_head",
+      "s3_post",
+      "s3_put"
+    ],
+    "allowedHeaders": ["*"],
+    "exposeHeaders": [
+      "x-bz-content-sha1",
+      "x-bz-file-id",
+      "x-bz-file-name",
+      "x-bz-info-*",
+      "Content-Length",
+      "Content-Type",
+      "Content-Range",
+      "ETag"
+    ],
+    "maxAgeSeconds": 86400
+  }
+]
