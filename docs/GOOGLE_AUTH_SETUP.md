@@ -116,7 +116,7 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 export const config = {
   apiUrl: API_BASE_URL,
-  appName: 'AAMENN',
+  appName: 'Aamenn',
   googleClientId: GOOGLE_CLIENT_ID,
 };
 ```
