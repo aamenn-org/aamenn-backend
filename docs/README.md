@@ -6,7 +6,7 @@
 
 **Zero-knowledge encrypted cloud storage API**
 
-Built with NestJS · TypeScript · PostgreSQL · Backblaze B2
+Built with NestJS · TypeScript · PostgreSQL · Our Cloud Storage
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.1-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![NestJS](https://img.shields.io/badge/NestJS-10-E0234E?style=flat-square&logo=nestjs&logoColor=white)](https://nestjs.com/)
@@ -21,14 +21,14 @@ Built with NestJS · TypeScript · PostgreSQL · Backblaze B2
 
 This is the backend service for **AAMEEN** — a privacy-first, end-to-end encrypted cloud storage platform built for Arab and MENA-region users. The server is designed around a strict zero-knowledge principle: **we never see your files, never hold your keys.**
 
-All files are encrypted on the client before they reach this server. The backend handles metadata, orchestrates signed upload/download URLs directly to Backblaze B2, and manages user accounts — nothing more.
+All files are encrypted on the client before they reach this server. The backend handles metadata, orchestrates signed upload/download URLs directly to our cloud storage, and manages user accounts — nothing more.
 
 ---
 
 ## Architecture
 
 ```
-Client                      AAMEEN Backend               Backblaze B2
+Client                      AAMEEN Backend               Our Cloud Storage
   │                               │                            │
   ├── Encrypt file locally ────── │                            │
   ├── POST /files/upload-init ──▶ │                            │
@@ -54,7 +54,7 @@ The backend **never receives plaintext file content** and **never stores encrypt
 | Framework | NestJS 10 (Node.js) |
 | Language | TypeScript 5 |
 | Database | PostgreSQL 14+ via TypeORM |
-| Storage | Backblaze B2 (S3-compatible) |
+| Storage | Our Cloud Storage (S3-compatible) |
 | Cache | Redis (via ioredis) |
 | Auth | JWT + Google OAuth2 |
 | Email | Nodemailer (SMTP) |
@@ -69,7 +69,7 @@ The backend **never receives plaintext file content** and **never stores encrypt
 - Node.js 18+
 - PostgreSQL 14+
 - Redis 6+
-- Backblaze B2 account
+- Our cloud storage account
 - (Optional) Paymob account for payment processing
 
 ---
@@ -140,11 +140,11 @@ docker compose up --build
 | `JWT_SECRET` | Symmetric signing secret (if not using JWKS) | ⚠️ |
 | `JWKS_URI` | JWKS endpoint from auth provider | ✅ (prod) |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | ✅ |
-| `B2_APPLICATION_KEY_ID` | Backblaze B2 key ID | ✅ |
-| `B2_APPLICATION_KEY` | Backblaze B2 application key | ✅ |
-| `B2_BUCKET_ID` | B2 bucket ID | ✅ |
-| `B2_BUCKET_NAME` | B2 bucket name | ✅ |
-| `B2_SIGNED_URL_EXPIRATION` | Signed URL TTL in seconds (default: `300`) | ✅ |
+| `CLOUD_APPLICATION_KEY_ID` | Cloud storage key ID | ✅ |
+| `CLOUD_APPLICATION_KEY` | Cloud storage application key | ✅ |
+| `CLOUD_BUCKET_ID` | Cloud bucket ID | ✅ |
+| `CLOUD_BUCKET_NAME` | Cloud bucket name | ✅ |
+| `CLOUD_SIGNED_URL_EXPIRATION` | Signed URL TTL in seconds (default: `300`) | ✅ |
 | `STORAGE_LIMIT_GB` | Per-user storage quota in GB | ✅ |
 | `SMTP_HOST` | SMTP server host | ✅ |
 | `SMTP_USER` | SMTP username | ✅ |
@@ -185,7 +185,7 @@ All endpoints are prefixed with `/api/v1` and require a valid JWT unless noted.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/files/upload-init` | Get a signed B2 URL to upload an encrypted file |
+| `POST` | `/files/upload-init` | Get a signed cloud storage URL to upload an encrypted file |
 | `GET` | `/files` | List all files for the authenticated user |
 | `GET` | `/files/:id` | Get file metadata + signed download URL |
 | `DELETE` | `/files/:id` | Soft-delete a file |
@@ -248,11 +248,11 @@ npm run test:e2e
 ## Utility Scripts
 
 ```bash
-# Migrate files between B2 buckets
-npm run migrate:b2:bucket
+# Migrate files between cloud storage buckets
+npm run migrate:cloud:bucket
 
-# Deduplicate files in B2
-npm run deduplicate:b2
+# Deduplicate files in cloud storage
+npm run deduplicate:cloud
 
 # Clear all data (use with extreme caution)
 npm run clear:data
@@ -265,7 +265,7 @@ npm run clear:data
 - All endpoints are JWT-protected
 - Rate limiting is enforced on all routes via `@nestjs/throttler`
 - HTTPS is enforced in production
-- Signed B2 URLs expire after 5 minutes
+- Signed cloud storage URLs expire after 5 minutes
 - No plaintext file content is ever logged or stored
 - Helmet middleware sets security-relevant HTTP headers
 - VPN/datacenter IP detection via `IP_LOOKUP_ENABLED`
@@ -278,7 +278,7 @@ npm run clear:data
 ```
 src/
 ├── auth/           # JWT auth, Google OAuth, token guards
-├── files/          # File metadata, B2 upload/download orchestration
+├── files/          # File metadata, cloud storage upload/download orchestration
 ├── albums/         # Album CRUD and file associations
 ├── storage/        # Per-user quota tracking
 ├── payments/       # Paymob integration (cards, wallets, Fawry)
